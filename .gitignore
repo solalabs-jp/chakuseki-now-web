@@ -1,0 +1,21 @@
+# Dependency directories
+node_modules/
+
+# Firebase
+.firebase/
+*-debug.log
+firepit-log.txt
+
+# OS
+.DS_Store
+
+# IDEs
+.vscode/
+.idea/
+
+# Environment
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
