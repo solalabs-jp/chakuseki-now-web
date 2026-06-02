@@ -32,6 +32,69 @@
     ],
     "rewrites": [
       {
+        "source": "/api/student/beacon",
+        "function": {
+          "functionId": "studentBeacon",
+          "region": "us-central1"
+        }
+      },
+      {
+        "source": "/api/student/answer",
+        "function": {
+          "functionId": "studentAnswer",
+          "region": "us-central1"
+        }
+      },
+      {
+        "source": "/api/student/attendance-calendar",
+        "function": {
+          "functionId": "studentAttendanceCalendar",
+          "region": "us-central1"
+        }
+      },
+      {
+        "source": "/api/student/attendance-summary",
+        "function": {
+          "functionId": "studentAttendanceSummary",
+          "region": "us-central1"
+        }
+      },
+      {
+        "source": "/api/student/timetable",
+        "function": {
+          "functionId": "studentTimetable",
+          "region": "us-central1"
+        }
+      },
+      {
+        "source": "/api/teacher/attendance-record",
+        "function": {
+          "functionId": "teacherAttendanceRecord",
+          "region": "us-central1"
+        }
+      },
+      {
+        "source": "/api/teacher/question",
+        "function": {
+          "functionId": "teacherQuestion",
+          "region": "us-central1"
+        }
+      },
+      {
+        "source": "/api/teacher/schedule-teacher",
+        "function": {
+          "functionId": "teacherScheduleTeacher",
+          "region": "us-central1"
+        }
+      },
+      {
+        "source": "/api/teacher/attendance-book",
+        "function": {
+          "functionId": "teacherAttendanceBook",
+          "region": "us-central1"
+        }
+      },
+      {
         "source": "**",
         "destination": "/index.html"
       }
@@ -51,7 +114,7 @@
       "port": 9000
     },
     "hosting": {
-      "port": 5000
+      "port": 5005
     },
     "eventarc": {
       "port": 9299
