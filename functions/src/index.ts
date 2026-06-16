@@ -1,6 +1,11 @@
 import {setGlobalOptions} from "firebase-functions";
 import {onRequest} from "firebase-functions/https";
 import * as logger from "firebase-functions/logger";
+import * as admin from "firebase-admin";
+import * as https from "https";
+
+admin.initializeApp();
+const db = admin.firestore();
 
 setGlobalOptions({maxInstances: 10});
 
@@ -38,8 +43,17 @@ type TeacherScheduleTeacherRequestBody = {
   scheduleId?: unknown;
 };
 
+type LoginRequestBody = {
+  email?: unknown;
+  password?: unknown;
+};
+
 type FunctionRequest = Parameters<Parameters<typeof onRequest>[0]>[0];
 type FunctionResponse = Parameters<Parameters<typeof onRequest>[0]>[1];
+
+// Firebase Web API Key
+// (FIREBASE_ prefix is reserved; use API_KEY instead)
+const FIREBASE_API_KEY = process.env.API_KEY ?? "";
 
 const DUMMY_STUDENT_SESSION = "dummy-session-student-001";
 const DUMMY_TEACHER_SESSION = "dummy-session-teacher-001";
@@ -141,6 +155,162 @@ const attendanceBookData = [
     period: 2,
   },
 ];
+
+// ─── Auth: Login ────────────────────────────────────────────────────────────
+
+/**
+ * POST /api/auth/login
+ * Body: { email: string, password: string }
+ * Response: { idToken, uid, role, userId }
+ *
+ * Firebase Identity Toolkit REST API でサインインし、
+ * Firestore の users コレクションからロール情報を付加して返す。
+ */
+export const loginWithEmailPassword = onRequest(async (request, response) => {
+  setCorsHeaders(response);
+
+  if (request.method === "OPTIONS") {
+    response.status(204).send("");
+    return;
+  }
+
+  if (request.method === "GET") {
+    response.status(200).json({
+      message: "POST email and password to login.",
+      method: "POST",
+      path: "/api/auth/login",
+      body: {
+        email: "teacher001@example.com",
+        password: "password123",
+      },
+    });
+    return;
+  }
+
+  if (request.method !== "POST") {
+    response.set("Allow", "GET, POST, OPTIONS");
+    sendStatus(response, 405);
+    return;
+  }
+
+  const body = (request.body ?? {}) as LoginRequestBody;
+
+  if (!isNonEmptyString(body.email) || !isNonEmptyString(body.password)) {
+    response.status(400).json({error: "email and password are required."});
+    return;
+  }
+
+  if (!FIREBASE_API_KEY) {
+    logger.error("FIREBASE_API_KEY is not set");
+    response.status(500).json({error: "Server configuration error."});
+    return;
+  }
+
+  try {
+    // 1. Firebase Identity Toolkit で Email/Password サインイン
+    const signInResult = await callIdentityToolkit({
+      email: body.email,
+      password: body.password,
+      returnSecureToken: true,
+    });
+
+    // エラーレスポンスの確認
+    const errorObj = signInResult.error as {message?: string} | undefined;
+    if (errorObj) {
+      const code = errorObj.message ?? "UNKNOWN";
+      logger.warn("Login failed", {code, email: body.email});
+
+      if (code === "EMAIL_NOT_FOUND" || code === "INVALID_PASSWORD" ||
+          code === "INVALID_LOGIN_CREDENTIALS") {
+        response.status(401).json({error: "Invalid email or password."});
+      } else {
+        response.status(400).json({error: code});
+      }
+      return;
+    }
+
+    const idToken = signInResult.idToken as string;
+    const uid = signInResult.localId as string;
+
+    // 2. Firestore の users コレクションから uid でロールを取得
+    //    uid が Firestore の doc ID と一致しない場合は email で検索
+    let role: string | null = null;
+    let userId: string | null = null;
+
+    // まず uid で直接引く
+    const directDoc = await db.collection("users").doc(uid).get();
+    if (directDoc.exists) {
+      role = directDoc.data()?.role ?? null;
+      userId = uid;
+    } else {
+      // uid が Firestore の doc ID と異なる場合は email で検索
+      const snap = await db
+        .collection("users")
+        .where("email", "==", body.email)
+        .limit(1)
+        .get();
+      if (!snap.empty) {
+        const doc = snap.docs[0];
+        role = doc.data().role ?? null;
+        userId = doc.id;
+      }
+    }
+
+    logger.info("Login successful", {uid, role, structuredData: true});
+
+    response.status(200).json({
+      idToken,
+      uid,
+      userId,
+      role,
+      expiresIn: signInResult.expiresIn as string,
+    });
+  } catch (err) {
+    logger.error("authLogin error", err);
+    response.status(500).json({error: "Internal server error."});
+  }
+});
+
+/**
+ * Firebase Identity Toolkit REST API (signInWithPassword) を呼ぶヘルパー
+ * @param {object} payload - サインインリクエストのペイロード
+ * @return {Promise<Record<string, unknown>>} Identity Toolkit のレスポンス
+ */
+function callIdentityToolkit(payload: {
+  email: string;
+  password: string;
+  returnSecureToken: boolean;
+}): Promise<Record<string, unknown>> {
+  return new Promise((resolve, reject) => {
+    const body = JSON.stringify(payload);
+    const options = {
+      hostname: "identitytoolkit.googleapis.com",
+      path: `/v1/accounts:signInWithPassword?key=${FIREBASE_API_KEY}`,
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Content-Length": Buffer.byteLength(body),
+      },
+    };
+
+    const req = https.request(options, (res) => {
+      let data = "";
+      res.on("data", (chunk) => (data += chunk));
+      res.on("end", () => {
+        try {
+          resolve(JSON.parse(data));
+        } catch {
+          reject(new Error("Failed to parse Identity Toolkit response"));
+        }
+      });
+    });
+    req.on("error", reject);
+    req.write(body);
+    req.end();
+  });
+}
+
+// ─── Student endpoints ───────────────────────────────────────────────────────
 
 export const studentBeacon = onRequest((request, response) => {
   setCorsHeaders(response);
