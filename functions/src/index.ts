@@ -2,6 +2,7 @@ import { setGlobalOptions } from "firebase-functions";
 import { onRequest } from "firebase-functions/https";
 import * as logger from "firebase-functions/logger";
 import * as admin from "firebase-admin";
+import { FieldValue } from "firebase-admin/firestore";
 import * as https from "https";
 import * as http from "http";
 
@@ -47,6 +48,13 @@ type TeacherScheduleTeacherRequestBody = {
 type LoginRequestBody = {
   email?: unknown;
   password?: unknown;
+};
+
+type RegisterRequestBody = {
+  email?: unknown;
+  password?: unknown;
+  role?: unknown;
+  classId?: unknown;
 };
 
 type FunctionRequest = Parameters<Parameters<typeof onRequest>[0]>[0];
@@ -293,6 +301,84 @@ function callIdentityToolkit(payload: {
     req.end();
   });
 }
+
+/**
+ * POST /api/auth/register
+ * Body: { email: string, password: string, role: string, classId?: string }
+ * Response: { uid, message }
+ *
+ * Firebase Admin SDK を用いてユーザーを作成し、
+ * Firestore の users コレクションにロール情報を保存する。
+ */
+export const registerUser = onRequest(async (request, response) => {
+  setCorsHeaders(response);
+
+  if (request.method === "OPTIONS") {
+    response.status(204).send("");
+    return;
+  }
+
+  if (request.method === "GET") {
+    response.status(200).json({
+      message: "POST email, password, and role to register.",
+      method: "POST",
+      path: "/api/auth/register",
+      body: {
+        email: "newuser@example.com",
+        password: "password123",
+        role: "student",
+        classId: "class-2A",
+      },
+    });
+    return;
+  }
+
+  if (request.method !== "POST") {
+    response.set("Allow", "GET, POST, OPTIONS");
+    sendStatus(response, 405);
+    return;
+  }
+
+  const body = (request.body ?? {}) as RegisterRequestBody;
+
+  if (!isNonEmptyString(body.email) || !isNonEmptyString(body.password) || !isNonEmptyString(body.role)) {
+    response.status(400).json({ error: "email, password, and role are required." });
+    return;
+  }
+
+  try {
+    // 1. Firebase Auth にユーザーを作成
+    const userRecord = await admin.auth().createUser({
+      email: body.email,
+      password: body.password,
+    });
+
+    // 2. Firestore の users コレクションに権限などを保存
+    const userData: Record<string, unknown> = {
+      role: body.role,
+      createdAt: FieldValue.serverTimestamp(),
+    };
+    if (isNonEmptyString(body.classId)) {
+      userData.classId = body.classId;
+    }
+
+    await db.collection("users").doc(userRecord.uid).set(userData);
+
+    logger.info("User registered successfully", { uid: userRecord.uid, role: body.role, structuredData: true });
+
+    response.status(201).json({
+      uid: userRecord.uid,
+      message: "User registered successfully.",
+    });
+  } catch (err: any) {
+    logger.error("Error registering user", { error: err });
+    if (err.code === "auth/email-already-exists") {
+      response.status(409).json({ error: "Email already exists." });
+    } else {
+      response.status(500).json({ error: "Internal server error." });
+    }
+  }
+});
 
 // ─── Student endpoints ───────────────────────────────────────────────────────
 
