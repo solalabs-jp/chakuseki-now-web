@@ -96,36 +96,7 @@ const attendanceSummaryData = [
   },
 ];
 
-const timetableData = [
-  {
-    day: "Monday",
-    class: [
-      {
-        period: "1",
-        subjectName: "ITマネジメント",
-        teacherName: "Kota Nemoto",
-        location: "101",
-      },
-      {
-        period: "2",
-        subjectName: "Webアプリ開発",
-        teacherName: "Ayaka Sato",
-        location: "204",
-      },
-    ],
-  },
-  {
-    day: "Tuesday",
-    class: [
-      {
-        period: "1",
-        subjectName: "データベース",
-        teacherName: "Kota Nemoto",
-        location: "302",
-      },
-    ],
-  },
-];
+
 
 const attendanceBookData = [
   {
@@ -499,11 +470,20 @@ export const studentAttendanceSummary = onRequest((request, response) => {
   response.status(200).json(attendanceSummaryData);
 });
 
-export const studentTimetable = onRequest((request, response) => {
+export const studentTimetable = onRequest(async (request, response) => {
   setCorsHeaders(response);
 
   if (request.method === "OPTIONS") {
     response.status(204).send("");
+    return;
+  }
+
+  if (request.method === "GET" && !request.headers.authorization) {
+    response.status(200).json({
+      message: "Add Authorization header (Bearer token) to get timetable.",
+      method: "GET",
+      path: "/api/student/timetable",
+    });
     return;
   }
 
@@ -513,26 +493,48 @@ export const studentTimetable = onRequest((request, response) => {
     return;
   }
 
-  const session = getSession(request);
+  const uid = await verifyToken(request);
+  if (!uid) {
+    response.status(401).json({ error: "Unauthorized. Invalid or missing token." });
+    return;
+  }
 
-  if (!isNonEmptyString(session)) {
-    response.status(200).json({
-      message: "Add session query to get timetable.",
-      method: "GET",
-      path: "/api/student/timetable",
-      query: {
-        session: DUMMY_STUDENT_SESSION,
-      },
+  try {
+    const userDoc = await db.collection("users").doc(uid).get();
+    if (!userDoc.exists) {
+      response.status(404).json({ error: "User not found." });
+      return;
+    }
+
+    const userData = userDoc.data();
+    const classId = userData?.classId;
+
+    if (!classId) {
+      response.status(404).json({ error: "User does not belong to any class." });
+      return;
+    }
+
+    const timetablesSnapshot = await db.collection("timetables").where("classId", "==", classId).get();
+    
+    if (timetablesSnapshot.empty) {
+      response.status(200).json([]);
+      return;
+    }
+
+    const timetables = timetablesSnapshot.docs.map(doc => {
+      const data = doc.data();
+      return {
+        subjectName: data.subjectName,
+        period: data.period,
+        dayOfWeek: data.dayOfWeek
+      };
     });
-    return;
-  }
 
-  if (session !== DUMMY_STUDENT_SESSION) {
-    sendStatus(response, 401);
-    return;
+    response.status(200).json(timetables);
+  } catch (err) {
+    logger.error("Error fetching timetable", { error: err });
+    response.status(500).json({ error: "Internal server error." });
   }
-
-  response.status(200).json(timetableData);
 });
 
 export const teacherAttendanceRecord = onRequest((request, response) => {
@@ -767,4 +769,19 @@ const isLocation = (value: unknown): boolean => {
   const longitude = location.longitude ?? location.lng;
 
   return typeof latitude === "number" && typeof longitude === "number";
+};
+
+const verifyToken = async (request: FunctionRequest): Promise<string | null> => {
+  const authHeader = request.headers.authorization;
+  if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    return null;
+  }
+  const idToken = authHeader.split("Bearer ")[1];
+  try {
+    const decodedToken = await admin.auth().verifyIdToken(idToken);
+    return decodedToken.uid;
+  } catch (err) {
+    logger.warn("Token verification failed", { error: err });
+    return null;
+  }
 };
