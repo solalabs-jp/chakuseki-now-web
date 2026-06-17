@@ -1,13 +1,14 @@
-import {setGlobalOptions} from "firebase-functions";
-import {onRequest} from "firebase-functions/https";
+import { setGlobalOptions } from "firebase-functions";
+import { onRequest } from "firebase-functions/https";
 import * as logger from "firebase-functions/logger";
 import * as admin from "firebase-admin";
 import * as https from "https";
+import * as http from "http";
 
 admin.initializeApp();
 const db = admin.firestore();
 
-setGlobalOptions({maxInstances: 10});
+setGlobalOptions({ maxInstances: 10 });
 
 type BeaconRequestBody = {
   beaconId?: unknown;
@@ -196,13 +197,13 @@ export const loginWithEmailPassword = onRequest(async (request, response) => {
   const body = (request.body ?? {}) as LoginRequestBody;
 
   if (!isNonEmptyString(body.email) || !isNonEmptyString(body.password)) {
-    response.status(400).json({error: "email and password are required."});
+    response.status(400).json({ error: "email and password are required." });
     return;
   }
 
   if (!FIREBASE_API_KEY) {
     logger.error("FIREBASE_API_KEY is not set");
-    response.status(500).json({error: "Server configuration error."});
+    response.status(500).json({ error: "Server configuration error." });
     return;
   }
 
@@ -215,16 +216,16 @@ export const loginWithEmailPassword = onRequest(async (request, response) => {
     });
 
     // エラーレスポンスの確認
-    const errorObj = signInResult.error as {message?: string} | undefined;
+    const errorObj = signInResult.error as { message?: string } | undefined;
     if (errorObj) {
       const code = errorObj.message ?? "UNKNOWN";
-      logger.warn("Login failed", {code, email: body.email});
+      logger.warn("Login failed", { code, email: body.email });
 
       if (code === "EMAIL_NOT_FOUND" || code === "INVALID_PASSWORD" ||
-          code === "INVALID_LOGIN_CREDENTIALS") {
-        response.status(401).json({error: "Invalid email or password."});
+        code === "INVALID_LOGIN_CREDENTIALS") {
+        response.status(401).json({ error: "Invalid email or password." });
       } else {
-        response.status(400).json({error: code});
+        response.status(400).json({ error: code });
       }
       return;
     }
@@ -242,21 +243,9 @@ export const loginWithEmailPassword = onRequest(async (request, response) => {
     if (directDoc.exists) {
       role = directDoc.data()?.role ?? null;
       userId = uid;
-    } else {
-      // uid が Firestore の doc ID と異なる場合は email で検索
-      const snap = await db
-        .collection("users")
-        .where("email", "==", body.email)
-        .limit(1)
-        .get();
-      if (!snap.empty) {
-        const doc = snap.docs[0];
-        role = doc.data().role ?? null;
-        userId = doc.id;
-      }
     }
 
-    logger.info("Login successful", {uid, role, structuredData: true});
+    logger.info("Login successful", { uid, role, structuredData: true });
 
     response.status(200).json({
       idToken,
@@ -267,12 +256,13 @@ export const loginWithEmailPassword = onRequest(async (request, response) => {
     });
   } catch (err) {
     logger.error("authLogin error", err);
-    response.status(500).json({error: "Internal server error."});
+    response.status(500).json({ error: "Internal server error." });
   }
 });
 
 /**
  * Firebase Identity Toolkit REST API (signInWithPassword) を呼ぶヘルパー
+ * エミュレータ環境では FIREBASE_AUTH_EMULATOR_HOST を参照して http で叩く
  * @param {object} payload - サインインリクエストのペイロード
  * @return {Promise<Record<string, unknown>>} Identity Toolkit のレスポンス
  */
@@ -283,17 +273,40 @@ function callIdentityToolkit(payload: {
 }): Promise<Record<string, unknown>> {
   return new Promise((resolve, reject) => {
     const body = JSON.stringify(payload);
-    const options = {
-      hostname: "identitytoolkit.googleapis.com",
-      path: `/v1/accounts:signInWithPassword?key=${FIREBASE_API_KEY}`,
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Content-Length": Buffer.byteLength(body),
-      },
-    };
+    const emulatorHost = process.env.FIREBASE_AUTH_EMULATOR_HOST;
 
-    const req = https.request(options, (res) => {
+    let requester: typeof https | typeof http;
+    let options: http.RequestOptions;
+
+    if (emulatorHost) {
+      // エミュレータ: http でローカルホストを叩く
+      const [hostname, portStr] = emulatorHost.split(":");
+      requester = http;
+      options = {
+        hostname,
+        port: portStr ? parseInt(portStr, 10) : 9099,
+        path: `/identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=fake-api-key`,
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Content-Length": Buffer.byteLength(body),
+        },
+      };
+    } else {
+      // 本番: https で Identity Toolkit を叩く
+      requester = https;
+      options = {
+        hostname: "identitytoolkit.googleapis.com",
+        path: `/v1/accounts:signInWithPassword?key=${FIREBASE_API_KEY}`,
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Content-Length": Buffer.byteLength(body),
+        },
+      };
+    }
+
+    const req = requester.request(options, (res) => {
       let data = "";
       res.on("data", (chunk) => (data += chunk));
       res.on("end", () => {
