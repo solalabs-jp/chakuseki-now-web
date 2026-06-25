@@ -8,3 +8,10 @@ typings/
 # Node.js dependency directory
 node_modules/
 *.local
+\n+# Environment
+.env
+local.settings.json
+
+# Logs
+npm-debug.log*
+*.log

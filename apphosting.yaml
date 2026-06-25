@@ -1,0 +1,12 @@
+apiVersion: apphosting.googleapis.com/v1
+kind: Service
+metadata:
+  name: default
+spec:
+  template:
+    spec:
+      containers:
+      - image: node:24
+        env:
+        - name: NODE_ENV
+          value: "production"

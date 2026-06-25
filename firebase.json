@@ -125,6 +125,10 @@
     "singleProjectMode": true
   },
   "extensions": {},
+  "apphosting": {
+    "backendId": "default",
+    "rootDir": "/"
+  },
   "auth": {
     "providers": {}
   }

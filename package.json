@@ -1,5 +1,23 @@
 {
+  "name": "chakuseki-now-web",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "export": "next export",
+    "start": "next start",
+    "deploy": "firebase deploy --only hosting"
+  },
   "dependencies": {
-    "firebase-tools": "^15.15.0"
+    "firebase-tools": "^15.15.0",
+    "next": "^15.2.0",
+    "react": "^18.3.0",
+    "react-dom": "^18.3.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.0",
+    "@types/node": "^20.11.0",
+    "@types/react": "^18.3.0",
+    "@types/react-dom": "^18.3.0"
   }
 }

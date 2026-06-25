@@ -1,0 +1,16 @@
+# Firebase CLI: files/folders to ignore when deploying
+node_modules
+.git
+.vscode
+.idea
+.DS_Store
+firebase-debug.log
+*.log
+coverage/
+
+# Local env files
+.env
+.env.*.local
+
+# Functions dependencies (installed during deploy)
+functions/node_modules
