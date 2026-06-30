@@ -6,7 +6,7 @@
     "build": "next build",
     "export": "next export",
     "start": "next start",
-    "deploy": "firebase deploy --only hosting"
+    "deploy": "firebase deploy --only apphosting"
   },
   "dependencies": {
     "firebase-tools": "^15.15.0",

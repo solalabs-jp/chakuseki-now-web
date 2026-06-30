@@ -1,12 +1,17 @@
-apiVersion: apphosting.googleapis.com/v1
-kind: Service
-metadata:
-  name: default
-spec:
-  template:
-    spec:
-      containers:
-      - image: node:24
-        env:
-        - name: NODE_ENV
-          value: "production"
+runConfig:
+  minInstances: 0
+  maxInstances: 10
+  concurrency: 80
+  cpu: 1
+  memoryMiB: 512
+
+scripts:
+  buildCommand: npm run build
+  runCommand: npm run start
+
+env:
+  - variable: NODE_ENV
+    value: production
+    availability:
+      - BUILD
+      - RUNTIME
