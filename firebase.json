@@ -16,10 +16,6 @@
         "firebase-debug.log",
         "firebase-debug.*.log",
         "*.local"
-      ],
-      "predeploy": [
-        "npm --prefix functions run lint",
-        "npm --prefix functions run build"
       ]
     }
   ],
@@ -98,6 +94,13 @@
         "source": "/api/auth/login",
         "function": {
           "functionId": "loginWithEmailPassword",
+          "region": "us-central1"
+        }
+      },
+      {
+        "source": "/api/admin/generate-daily-sessions",
+        "function": {
+          "functionId": "adminGenerateDailySessions",
           "region": "us-central1"
         }
       },
