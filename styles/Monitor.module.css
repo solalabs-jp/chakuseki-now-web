@@ -1,0 +1,143 @@
+.page {
+  min-height: 100vh;
+  background: #ffffff;
+  display: flex;
+  flex-direction: column;
+  padding: 32px 48px 40px;
+  position: relative;
+}
+
+/* ── Logo ── */
+.logo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.logoIcon {
+  width: 36px;
+  height: 36px;
+  background: #dc2626;
+  border-radius: 8px;
+  display: grid;
+  place-items: center;
+  color: white;
+  font-weight: 700;
+  font-size: 16px;
+}
+
+.logoText {
+  display: flex;
+  flex-direction: column;
+}
+
+.logoText strong {
+  font-size: 14px;
+  font-weight: 700;
+  color: #111827;
+}
+
+.logoText span {
+  font-size: 10px;
+  color: #9ca3af;
+}
+
+/* ── Center ── */
+.center {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  gap: 24px;
+  padding: 40px 0;
+}
+
+.questionBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: #fef2f2;
+  color: #dc2626;
+  padding: 8px 16px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 500;
+  border: 1px solid #fecaca;
+}
+
+.questionText {
+  font-size: 52px;
+  font-weight: 700;
+  color: #111827;
+  line-height: 1.25;
+  max-width: 800px;
+}
+
+.instruction {
+  font-size: 14px;
+  color: #9ca3af;
+  line-height: 1.8;
+}
+
+/* ── Bottom ── */
+.bottom {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+}
+
+.clock {}
+
+.clockTime {
+  font-size: 38px;
+  font-weight: 700;
+  color: #111827;
+  line-height: 1;
+}
+
+.clockDate {
+  font-size: 14px;
+  color: #6b7280;
+  margin-top: 4px;
+}
+
+/* ── QR ── */
+.qrArea {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+
+.qrBox {
+  width: 140px;
+  height: 140px;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: white;
+  padding: 10px;
+}
+
+.qrLabel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.qrLabel span {
+  font-size: 13px;
+  font-weight: 500;
+  color: #374151;
+}
+
+.qrSub {
+  font-size: 11px !important;
+  color: #9ca3af !important;
+  font-weight: 400 !important;
+}

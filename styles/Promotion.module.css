@@ -1,0 +1,441 @@
+.page {
+  padding: 28px 32px;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.pageHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.title {
+  font-size: 26px;
+  font-weight: 700;
+  color: #111827;
+}
+
+.subtitle {
+  font-size: 13px;
+  color: #6b7280;
+  margin-top: 4px;
+}
+
+.headerRight {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.iconBtn {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 1px solid #e5e7eb;
+  background: #fff;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+}
+
+/* ── Stepper ── */
+.stepperContainer {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 4px;
+}
+
+.stepper {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  max-width: 700px;
+}
+
+.step {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  position: relative;
+  z-index: 1;
+}
+
+.stepCircle {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: #e5e7eb;
+  color: #6b7280;
+  display: grid;
+  place-items: center;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.stepCircleActive {
+  background: #dc2626;
+  color: white;
+}
+
+.stepCircleDone {
+  background: #dc2626;
+  color: white;
+}
+
+.stepLabel {
+  font-size: 11px;
+  color: #9ca3af;
+  white-space: nowrap;
+  font-weight: 500;
+}
+
+.stepLabelActive {
+  color: #111827;
+  font-weight: 600;
+}
+
+.stepLine {
+  flex: 1;
+  height: 2px;
+  background: #e5e7eb;
+  margin: 0 -10px 14px;
+}
+
+.stepLineDone {
+  background: #dc2626;
+}
+
+/* ── Warning Banner ── */
+.warningBanner {
+  background: #fff5f5;
+  border: 1px solid #fee2e2;
+  border-radius: 10px;
+  padding: 14px 18px;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  color: #b91c1c;
+}
+
+.warningTitle {
+  font-size: 13px;
+  font-weight: 700;
+  margin-bottom: 2px;
+}
+
+.warningText {
+  font-size: 12px;
+  color: #b91c1c;
+  opacity: 0.9;
+}
+
+/* ── Main Grid ── */
+.mainGrid {
+  display: flex;
+  gap: 16px;
+  align-items: stretch;
+}
+
+.columnCard {
+  flex: 1;
+  background: #fff;
+  border-radius: 12px;
+  border: 1px solid #f0f0f0;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+}
+
+.columnHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-bottom: 1px solid #f3f4f6;
+  padding-bottom: 12px;
+  margin-bottom: 16px;
+}
+
+.columnTitle {
+  font-size: 14px;
+  font-weight: 700;
+  color: #111827;
+}
+
+.yearLabel {
+  font-size: 11px;
+  color: #9ca3af;
+}
+
+.classBadge {
+  font-size: 11px;
+  font-weight: 700;
+  color: #dc2626;
+  background: #fee2e2;
+  padding: 2px 8px;
+  border-radius: 4px;
+  margin-left: auto;
+}
+
+.classSelect {
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  padding: 3px 8px;
+  font-size: 12px;
+  background: #fff;
+  margin-left: auto;
+  outline: none;
+  cursor: pointer;
+}
+
+/* ── Student List ── */
+.studentList {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  flex: 1;
+}
+
+.studentRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: #fffafa;
+  border: 1px solid #fee2e2;
+  border-radius: 8px;
+  padding: 12px;
+}
+
+.checkboxContainer {
+  position: relative;
+  display: block;
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+}
+
+.checkboxContainer input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.checkmark {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 16px;
+  width: 16px;
+  background-color: #fff;
+  border: 1.5px solid #d1d5db;
+  border-radius: 4px;
+}
+
+.checkboxContainer input:checked ~ .checkmark {
+  background-color: #dc2626;
+  border-color: #dc2626;
+}
+
+.checkmark:after {
+  content: "";
+  position: absolute;
+  display: none;
+}
+
+.checkboxContainer input:checked ~ .checkmark:after {
+  display: block;
+}
+
+.checkboxContainer .checkmark:after {
+  left: 5px;
+  top: 2px;
+  width: 4px;
+  height: 8px;
+  border: solid white;
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+
+.studentDetails {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.studentName {
+  font-size: 13px;
+  font-weight: 600;
+  color: #111827;
+}
+
+.studentMeta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: #9ca3af;
+}
+
+.dotSeparator {
+  opacity: 0.6;
+}
+
+.flagText {
+  color: #dc2626;
+  font-weight: 500;
+}
+
+.flagIcon {
+  display: inline-flex;
+  align-items: center;
+}
+
+/* ── Transition col ── */
+.transitionCol {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.transitionCircle {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: #f3f4f6;
+  color: #9ca3af;
+  display: grid;
+  place-items: center;
+  font-size: 16px;
+  font-weight: 700;
+}
+
+/* ── Preview Column ── */
+.previewRow {
+  display: flex;
+  align-items: center;
+  background: #fff;
+  border: 1px solid #f3f4f6;
+  border-radius: 8px;
+  padding: 12px;
+  position: relative;
+  overflow: hidden;
+}
+
+.previewRowDisabled {
+  opacity: 0.5;
+  background: #f9fafb;
+}
+
+.barIndicatorActive {
+  width: 3px;
+  background: #dc2626;
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+}
+
+.barIndicatorDisabled {
+  width: 3px;
+  background: #9ca3af;
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+}
+
+.previewDetails {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding-left: 8px;
+}
+
+.previewName {
+  font-size: 13px;
+  font-weight: 600;
+  color: #111827;
+}
+
+.previewNameDisabled {
+  font-size: 13px;
+  font-weight: 500;
+  text-decoration: line-through;
+  color: #9ca3af;
+}
+
+.previewMeta {
+  font-size: 11px;
+  color: #9ca3af;
+}
+
+.readyBadge {
+  margin-left: auto;
+  font-size: 10px;
+  color: #d97706;
+  background: #fef3c7;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-weight: 600;
+}
+
+.columnFooter {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-top: 14px;
+  border-top: 1px solid #f3f4f6;
+  margin-top: 16px;
+  font-size: 13px;
+  color: #374151;
+}
+
+.footerCount {
+  font-size: 14px;
+  font-weight: 700;
+  color: #dc2626;
+}
+
+/* ── Bottom actions ── */
+.actionsRow {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-top: 12px;
+  padding-top: 18px;
+  border-top: 1px solid #e5e7eb;
+}
+
+.cancelBtn {
+  background: #ffffff;
+  color: #374151;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  padding: 10px 24px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.cancelBtn:hover {
+  background: #f3f4f6;
+}
+
+.submitBtn {
+  background: #dc2626;
+  color: white;
+  border-radius: 8px;
+  padding: 10px 24px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.submitBtn:hover {
+  background: #b91c1c;
+}

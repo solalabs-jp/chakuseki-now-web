@@ -1,0 +1,325 @@
+.page {
+  padding: 28px 32px;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+/* ── Header ── */
+.pageHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+}
+
+.title {
+  font-size: 28px;
+  font-weight: 700;
+  color: #111827;
+  line-height: 1.2;
+}
+
+.subtitle {
+  font-size: 13px;
+  color: #6b7280;
+  margin-top: 4px;
+}
+
+.headerRight {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.tabGroup {
+  display: inline-flex;
+  background: #fff;
+  border-radius: 999px;
+  padding: 4px;
+  gap: 2px;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+}
+
+.tab {
+  padding: 7px 16px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 500;
+  color: #6b7280;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.tabActive {
+  background: #fee2e2;
+  color: #dc2626;
+  font-weight: 600;
+}
+
+.iconBtn {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 1px solid #e5e7eb;
+  background: #fff;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.iconBtn:hover {
+  background: #f3f4f6;
+}
+
+/* ── Monitor button row ── */
+.monitorRow {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.monitorBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: #dc2626;
+  color: white;
+  padding: 10px 18px;
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 600;
+  transition: background 0.15s;
+  text-decoration: none;
+}
+
+.monitorBtn:hover {
+  background: #b91c1c;
+}
+
+/* ── Section header ── */
+.sectionHeader {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.sectionLabel {
+  font-size: 13px;
+  font-weight: 600;
+  color: #111827;
+}
+
+/* ── Schedule list ── */
+.scheduleList {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.scheduleRow {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  padding: 16px 18px;
+  position: relative;
+}
+
+/* Status variants */
+.row_past {
+  opacity: 0.72;
+}
+
+.row_current {
+  border-color: #dc2626;
+  background: #fffafa;
+  box-shadow: 0 0 0 1px #dc2626;
+}
+
+.row_next {
+  border-left: 3px solid #3b82f6;
+}
+
+.row_planned {
+  border-left: 3px solid #93c5fd;
+}
+
+/* ── Row left ── */
+.rowLeft {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex: 1;
+  min-width: 0;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.badge_past {
+  background: #f3f4f6;
+  color: #6b7280;
+}
+
+.badge_current {
+  background: #fee2e2;
+  color: #dc2626;
+}
+
+.badge_next {
+  background: #eff6ff;
+  color: #3b82f6;
+}
+
+.badge_planned {
+  background: #f0f9ff;
+  color: #0284c7;
+}
+
+.timeBlock {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  min-width: 60px;
+  flex-shrink: 0;
+}
+
+.timeMain {
+  font-size: 15px;
+  font-weight: 700;
+  color: #111827;
+  line-height: 1;
+}
+
+.timeMainCurrent {
+  font-size: 28px;
+  color: #dc2626;
+}
+
+.timeSub {
+  font-size: 11px;
+  color: #9ca3af;
+  margin-top: 2px;
+}
+
+.subject {
+  font-size: 16px;
+  font-weight: 700;
+  color: #111827;
+}
+
+.meta {
+  font-size: 12px;
+  color: #9ca3af;
+  margin-top: 2px;
+}
+
+/* ── Row right ── */
+.rowRight {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  min-width: 200px;
+}
+
+.seatGrid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  width: 120px;
+}
+
+.seat {
+  width: 7px;
+  height: 7px;
+  border-radius: 1px;
+  flex-shrink: 0;
+}
+
+.seatOn {
+  background: #dc2626;
+}
+
+.seatOff {
+  background: #fecaca;
+}
+
+.attendRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.attendVal {
+  font-size: 13px;
+  font-weight: 700;
+  color: #111827;
+}
+
+.percentBadge {
+  font-size: 11px;
+  color: #dc2626;
+  background: #fee2e2;
+  padding: 2px 8px;
+  border-radius: 999px;
+}
+
+.rightLabel {
+  font-size: 11px;
+  color: #9ca3af;
+}
+
+.bar {
+  width: 180px;
+  height: 6px;
+  background: #f3f4f6;
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.barFill {
+  height: 100%;
+  border-radius: 999px;
+  transition: width 0.3s;
+}
+
+.detailBtn {
+  display: inline-flex;
+  align-items: center;
+  background: #dc2626;
+  color: white;
+  padding: 7px 14px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  text-decoration: none;
+  transition: background 0.15s;
+}
+
+.detailBtn:hover {
+  background: #b91c1c;
+}
+
+/* ── Chevron ── */
+.chevron {
+  font-size: 20px;
+  color: #d1d5db;
+  flex-shrink: 0;
+  margin-left: 4px;
+}

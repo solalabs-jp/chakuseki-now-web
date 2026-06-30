@@ -1,0 +1,319 @@
+.page {
+  padding: 28px 32px;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.pageHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+}
+
+.title {
+  font-size: 26px;
+  font-weight: 700;
+  color: #111827;
+}
+
+.headerRight {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.tabGroup {
+  display: inline-flex;
+  background: #fff;
+  border-radius: 999px;
+  padding: 4px;
+  gap: 2px;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+}
+
+.tab {
+  padding: 7px 16px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 500;
+  color: #6b7280;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.tabActive {
+  background: #fee2e2;
+  color: #dc2626;
+  font-weight: 600;
+}
+
+.iconBtn {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 1px solid #e5e7eb;
+  background: #fff;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+}
+
+.iconBtn:hover {
+  background: #f3f4f6;
+}
+
+/* ── Body layout ── */
+.body {
+  display: flex;
+  gap: 20px;
+  align-items: flex-start;
+}
+
+.leftCol {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  width: 280px;
+  flex-shrink: 0;
+}
+
+/* ── Cards ── */
+.card {
+  background: #fff;
+  border-radius: 14px;
+  padding: 20px;
+  border: 1px solid #f0f0f0;
+}
+
+.cardTitle {
+  font-size: 14px;
+  font-weight: 700;
+  color: #111827;
+  margin-bottom: 16px;
+}
+
+.gaugeWrap {
+  display: flex;
+  justify-content: center;
+  padding: 8px 0;
+}
+
+/* ── Watch card ── */
+.watchCard {
+  background: #fffbf0;
+  border-color: #fed7aa;
+}
+
+.watchHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 14px;
+}
+
+.watchTitle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 700;
+  color: #111827;
+}
+
+.linkBtn {
+  font-size: 12px;
+  color: #dc2626;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-weight: 500;
+}
+
+.watchList {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.watchRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.watchAvatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  color: white;
+  display: grid;
+  place-items: center;
+  font-size: 12px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.watchInfo {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+}
+
+.watchName {
+  font-size: 13px;
+  font-weight: 600;
+  color: #111827;
+}
+
+.watchNote {
+  font-size: 11px;
+  color: #9ca3af;
+}
+
+.watchPct {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+}
+
+.termLabel {
+  font-size: 10px;
+  color: #9ca3af;
+}
+
+/* ── Table card ── */
+.tableCard {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.tableHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.tableSubtitle {
+  font-size: 11px;
+  color: #9ca3af;
+  margin-top: 3px;
+}
+
+.tableActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.searchBox {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: #f9fafb;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 7px 12px;
+}
+
+.searchInput {
+  border: none;
+  background: transparent;
+  font-size: 12px;
+  color: #111827;
+  outline: none;
+  width: 140px;
+}
+
+.searchInput::placeholder {
+  color: #9ca3af;
+}
+
+.filterBtn {
+  width: 32px;
+  height: 32px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #fff;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.th {
+  padding: 10px 12px;
+  text-align: left;
+  font-size: 11px;
+  font-weight: 600;
+  color: #9ca3af;
+  border-bottom: 1px solid #f3f4f6;
+}
+
+.tr {
+  border-bottom: 1px solid #f9fafb;
+}
+
+.tr:last-child {
+  border-bottom: none;
+}
+
+.td {
+  padding: 12px 12px;
+}
+
+.studentCell {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  color: white;
+  display: grid;
+  place-items: center;
+  font-size: 11px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.studentName {
+  font-size: 13px;
+  font-weight: 500;
+  color: #111827;
+}
+
+.statusBadge {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.tableFooter {
+  font-size: 12px;
+  color: #9ca3af;
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid #f3f4f6;
+}
