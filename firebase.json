@@ -102,6 +102,13 @@
         }
       },
       {
+        "source": "/api/admin/generate-daily-sessions",
+        "function": {
+          "functionId": "adminGenerateDailySessions",
+          "region": "us-central1"
+        }
+      },
+      {
         "source": "**",
         "destination": "/index.html"
       }
