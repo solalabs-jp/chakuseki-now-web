@@ -603,7 +603,7 @@ export const studentTimetable = onRequest(async (request, response) => {
     }
 
     const timetablesSnapshot = await db.collection("timetables").where("classId", "==", classId).get();
-    
+
     if (timetablesSnapshot.empty) {
       response.status(200).json([]);
       return;
@@ -760,26 +760,85 @@ export const teacherScheduleTeacher = onRequest(async (request, response) => {
     !isNonEmptyString(body.newTeacherId) ||
     !isNonEmptyString(body.dailySessionId)
   ) {
-    response.status(400).json({ error: "newTeacherId and dailySessionId are required." });
-    return;
-  }
-
-  if (body.session !== DUMMY_TEACHER_SESSION) {
-    sendStatus(response, 401);
+    response.status(400).json({
+      error: "newTeacherId and dailySessionId are required.",
+    });
     return;
   }
 
   try {
-    // dailySession の存在確認
+    // 1. 操作している教師の userId の取得
+    let operatingUserId: string | null = null;
+    const uid = await verifyToken(request);
+    if (uid) {
+      operatingUserId = uid;
+    } else if (body.session === DUMMY_TEACHER_SESSION) {
+      // ダミーセッション用のデフォルト教師ID
+      operatingUserId = "teacher-001";
+    }
+
+    if (!operatingUserId) {
+      response.status(401).json({
+        error: "Unauthorized. Invalid or missing token/session.",
+      });
+      return;
+    }
+
+    // 2. 操作元ユーザーの存在と教師権限チェック
+    const userDoc = await db.collection("users").doc(operatingUserId).get();
+    if (!userDoc.exists) {
+      response.status(404).json({error: "Operating user not found."});
+      return;
+    }
+    const userData = userDoc.data();
+    if (userData?.role !== "teacher") {
+      response.status(403).json({
+        error: "Forbidden. Only teachers can update schedules.",
+      });
+      return;
+    }
+
+    // 3. dailySession の存在確認
     const sessionRef = db.collection("dailySessions").doc(body.dailySessionId);
     const sessionDoc = await sessionRef.get();
 
     if (!sessionDoc.exists) {
-      response.status(404).json({ error: "Daily session not found." });
+      response.status(404).json({error: "Daily session not found."});
       return;
     }
 
-    // teacherId を更新
+    const sessionData = sessionDoc.data();
+    const scheduleId = sessionData?.scheduleId;
+    if (!scheduleId) {
+      response.status(400).json({
+        error: "Daily session does not have a scheduleId.",
+      });
+      return;
+    }
+
+    // 4. 紐づく時間割（SCHEDULES）の取得
+    const scheduleDoc = await db.collection("schedules").doc(scheduleId).get();
+    if (!scheduleDoc.exists) {
+      response.status(404).json({error: "Associated schedule not found."});
+      return;
+    }
+
+    const scheduleData = scheduleDoc.data();
+    // ER図の defaultTeacherId または、既存のモックにある teacherId のいずれかを取得
+    const defaultTeacherId =
+      scheduleData?.defaultTeacherId ?? scheduleData?.teacherId;
+
+    // 5. 操作している本人が「元の先生」または「現在の代理の先生」であることを検証
+    const isOriginal = operatingUserId === defaultTeacherId;
+    const isCurrent = operatingUserId === sessionData?.teacherId;
+    if (!isOriginal && !isCurrent) {
+      response.status(403).json({
+        error: "Forbidden. You are not authorized to modify this session.",
+      });
+      return;
+    }
+
+    // 6. teacherId を更新 (元のスケジュールは汚さず、その回の授業のみ変更)
     await sessionRef.update({
       teacherId: body.newTeacherId,
       updatedAt: FieldValue.serverTimestamp(),
@@ -788,17 +847,15 @@ export const teacherScheduleTeacher = onRequest(async (request, response) => {
     logger.info("Daily session teacher updated", {
       dailySessionId: body.dailySessionId,
       newTeacherId: body.newTeacherId,
+      updatedBy: operatingUserId,
       structuredData: true,
     });
 
-    response.status(200).json({
-      message: "Teacher updated successfully.",
-      dailySessionId: body.dailySessionId,
-      newTeacherId: body.newTeacherId,
-    });
+    response.status(204).send();
+
   } catch (err) {
-    logger.error("Error updating daily session teacher", { error: err });
-    response.status(500).json({ error: "Internal server error." });
+    logger.error("Error updating daily session teacher", {error: err});
+    response.status(500).json({error: "Internal server error."});
   }
 });
 
