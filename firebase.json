@@ -91,6 +91,13 @@
         }
       },
       {
+        "source": "/api/teacher/register-beacon",
+        "function": {
+          "functionId": "teacherRegisterBeacon",
+          "region": "us-central1"
+        }
+      },
+      {
         "source": "/api/auth/login",
         "function": {
           "functionId": "loginWithEmailPassword",
