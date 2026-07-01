@@ -47,6 +47,12 @@ type TeacherScheduleTeacherRequestBody = {
   dailySessionId?: unknown;
 };
 
+type RegisterBeaconRequestBody = {
+  session?: unknown;
+  beaconId?: unknown;
+  BeaconId?: unknown;
+};
+
 type LoginRequestBody = {
   email?: unknown;
   password?: unknown;
@@ -838,6 +844,139 @@ export const teacherAttendanceBook = onRequest((request, response) => {
   }
 
   response.status(200).json(attendanceBookData);
+});
+
+/**
+ * POST /api/teacher/register-beacon
+ * Body: { session: string, beaconId: string }
+ * Response: { message: string, userId: string, beaconId: string }
+ *
+ * 受け取った session を元に users コレクションから該当の教員ドキュメントを検索し、
+ * そのドキュメントに beaconId と session を書き込む。
+ */
+export const teacherRegisterBeacon = onRequest(async (request, response) => {
+  setCorsHeaders(response);
+
+  if (request.method === "OPTIONS") {
+    response.status(204).send("");
+    return;
+  }
+
+  if (request.method === "GET") {
+    response.status(200).json({
+      message: "POST session and beaconId to register teacher beacon.",
+      method: "POST",
+      path: "/api/teacher/register-beacon",
+      body: {
+        session: DUMMY_TEACHER_SESSION,
+        beaconId: "beacon-001",
+      },
+    });
+    return;
+  }
+
+  if (request.method !== "POST") {
+    response.set("Allow", "GET, POST, OPTIONS");
+    sendStatus(response, 405);
+    return;
+  }
+
+  const body = (request.body ?? {}) as RegisterBeaconRequestBody;
+  const session = body.session;
+  const beaconId = body.beaconId ?? body.BeaconId;
+
+  if (!isNonEmptyString(session) || !isNonEmptyString(beaconId)) {
+    response.status(400).json({
+      error: "session and beaconId are required.",
+    });
+    return;
+  }
+
+  try {
+    let targetDocRef: admin.firestore.DocumentReference | null = null;
+    let targetDocData: admin.firestore.DocumentData | null = null;
+
+    // 1. Firebase Auth ID Token として検証を試みる
+    try {
+      const decodedToken = await admin.auth().verifyIdToken(session);
+      const uid = decodedToken.uid;
+      const userDoc = await db.collection("users").doc(uid).get();
+      if (userDoc.exists) {
+        targetDocRef = userDoc.ref;
+        targetDocData = userDoc.data() || {};
+      }
+    } catch (tokenErr) {
+      // ID Token ではない、あるいは検証失敗時は次のステップへ
+    }
+
+    // 2. ドキュメント ID が直接 session と一致するか検証
+    if (!targetDocRef) {
+      const directDoc = await db.collection("users").doc(session).get();
+      if (directDoc.exists) {
+        targetDocRef = directDoc.ref;
+        targetDocData = directDoc.data() || {};
+      }
+    }
+
+    // 3. session フィールドの値が一致するドキュメントを検索
+    if (!targetDocRef) {
+      const querySnapshot = await db
+        .collection("users")
+        .where("session", "==", session)
+        .limit(1)
+        .get();
+      if (!querySnapshot.empty) {
+        targetDocRef = querySnapshot.docs[0].ref;
+        targetDocData = querySnapshot.docs[0].data();
+      }
+    }
+
+    // 4. ダミーセッションかつ "teacher-001" が存在するか検証
+    if (!targetDocRef && session === DUMMY_TEACHER_SESSION) {
+      const dummyDoc = await db.collection("users").doc("teacher-001").get();
+      if (dummyDoc.exists) {
+        targetDocRef = dummyDoc.ref;
+        targetDocData = dummyDoc.data() || {};
+      }
+    }
+
+    if (!targetDocRef || !targetDocData) {
+      response.status(404).json({
+        error: "Teacher not found with the provided session.",
+      });
+      return;
+    }
+
+    // ロールが教員か検証
+    if (targetDocData.role !== "teacher") {
+      response.status(403).json({
+        error: "Forbidden. Only teacher accounts can register beacon.",
+      });
+      return;
+    }
+
+    // beaconId (および session) を更新
+    await targetDocRef.update({
+      session: session,
+      beaconId: beaconId,
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+
+    logger.info("Teacher beacon registered successfully", {
+      docId: targetDocRef.id,
+      beaconId: beaconId,
+      structuredData: true,
+    });
+
+    response.status(200).json({
+      message: "Beacon registered successfully.",
+      userId: targetDocRef.id,
+      beaconId: beaconId,
+    });
+  } catch (err) {
+    logger.error("Error registering teacher beacon", {error: err});
+    response.status(500).json({error: "Internal server error."});
+  }
 });
 
 // ─── Scheduled: Generate Daily Sessions ─────────────────────────────────────
