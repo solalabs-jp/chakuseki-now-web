@@ -9,6 +9,12 @@ firepit-log.txt
 # OS
 .DS_Store
 
+# Build artifacts / temporary files
+.next/
+out/
+coverage/
+*.tsbuildinfo
+
 # IDEs
 .vscode/
 .idea/
