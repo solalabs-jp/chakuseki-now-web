@@ -1,0 +1,211 @@
+.page {
+  padding: 28px 32px;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.pageHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+}
+
+.title {
+  font-size: 26px;
+  font-weight: 700;
+  color: #111827;
+}
+
+.subtitle {
+  font-size: 13px;
+  color: #6b7280;
+  margin-top: 4px;
+}
+
+.headerRight {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.searchBox {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 7px 12px;
+}
+
+.searchInput {
+  border: none;
+  background: transparent;
+  font-size: 12px;
+  color: #111827;
+  outline: none;
+  width: 130px;
+}
+
+.searchInput::placeholder {
+  color: #9ca3af;
+}
+
+.deptSelect {
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 7px 12px;
+  font-size: 12px;
+  background: #fff;
+  color: #374151;
+  cursor: pointer;
+  outline: none;
+}
+
+.iconBtn {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 1px solid #e5e7eb;
+  background: #fff;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+}
+
+.iconBtn:hover {
+  background: #f3f4f6;
+}
+
+/* ── Filters ── */
+.filterRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+.filterLeft {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.filterLabel {
+  font-size: 13px;
+  color: #6b7280;
+}
+
+.filterValue {
+  font-size: 13px;
+  font-weight: 600;
+  color: #111827;
+}
+
+.termBtn {
+  padding: 5px 14px;
+  border-radius: 6px;
+  font-size: 13px;
+  color: #6b7280;
+  background: transparent;
+  border: 1px solid #e5e7eb;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.termActive {
+  background: #fef2f2;
+  color: #dc2626;
+  border-color: #fecaca;
+  font-weight: 600;
+}
+
+.filterRight {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.infoText {
+  font-size: 11px;
+  color: #9ca3af;
+}
+
+/* ── Card grid ── */
+.cardGrid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+}
+
+.classCard {
+  background: #fff;
+  border-radius: 14px;
+  padding: 20px;
+  border: 1px solid #f0f0f0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.cardTop {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.classIdBadge {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  background: #fef2f2;
+  color: #dc2626;
+  display: grid;
+  place-items: center;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.deptBadge {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 10px;
+  border-radius: 999px;
+}
+
+.className {
+  font-size: 17px;
+  font-weight: 700;
+  color: #111827;
+}
+
+.studentCount {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  color: #6b7280;
+}
+
+.detailBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: #dc2626;
+  color: white;
+  padding: 10px 16px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
+  margin-top: 4px;
+  transition: background 0.15s;
+}
+
+.detailBtn:hover {
+  background: #b91c1c;
+}

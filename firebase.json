@@ -22,20 +22,6 @@
       ]
     }
   ],
-  "hosting": {
-    "public": "public",
-    "ignore": [
-      "firebase.json",
-      "**/.*",
-      "**/node_modules/**"
-    ],
-    "rewrites": [
-      {
-        "source": "**",
-        "destination": "/index.html"
-      }
-    ]
-  },
   "emulators": {
     "auth": {
       "port": 9099
@@ -50,7 +36,7 @@
       "port": 9000
     },
     "hosting": {
-      "port": 5000
+      "port": 5005
     },
     "eventarc": {
       "port": 9299
@@ -61,6 +47,10 @@
     "singleProjectMode": true
   },
   "extensions": {},
+  "apphosting": {
+    "backendId": "default",
+    "rootDir": "/"
+  },
   "auth": {
     "providers": {}
   }

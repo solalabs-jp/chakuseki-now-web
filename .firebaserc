@@ -1,5 +1,11 @@
 {
   "projects": {
     "default": "chakuseki-now"
+  },
+  "targets": {},
+  "etags": {
+    "chakuseki-now": {
+      "extensionInstances": {}
+    }
   }
 }

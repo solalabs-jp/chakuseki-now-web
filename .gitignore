@@ -9,6 +9,12 @@ firepit-log.txt
 # OS
 .DS_Store
 
+# Build artifacts / temporary files
+.next/
+out/
+coverage/
+*.tsbuildinfo
+
 # IDEs
 .vscode/
 .idea/
@@ -19,3 +25,25 @@ firepit-log.txt
 .env.development.local
 .env.test.local
 .env.production.local
+
+# Next.js / build outputs
+.next/
+out/
+build/
+dist/
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+*.log
+
+# Coverage
+coverage/
+
+# Caches
+.cache/
+.next/cache/
+
+# TypeScript
+*.tsbuildinfo
