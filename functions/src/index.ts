@@ -441,7 +441,7 @@ export const studentBeacon = onRequest((request, response) => {
   sendStatus(response, 200);
 });
 
-export const studentAnswer = onRequest((request, response) => {
+export const studentAnswer = onRequest(async (request, response) => {
   setCorsHeaders(response);
 
   if (request.method === "OPTIONS") {
@@ -479,17 +479,119 @@ export const studentAnswer = onRequest((request, response) => {
     return;
   }
 
-  if (body.session !== DUMMY_STUDENT_SESSION) {
-    sendStatus(response, 401);
-    return;
+  try {
+    // 1. 生徒IDの特定
+    let studentId: string | null = null;
+    const uid = await verifyToken(request);
+    if (uid) {
+      studentId = uid;
+    } else if (body.session === DUMMY_STUDENT_SESSION) {
+      studentId = "student-001";
+    }
+
+    if (!studentId) {
+      response.status(401).json({
+        error: "Unauthorized. Invalid or missing token/session.",
+      });
+      return;
+    }
+
+    const questionId = body.questionId;
+
+    // 2. 対象質問 (checkinQuestion) の存在確認と dailySessionId の取得
+    const questionDoc = await db.collection("checkinQuestion").doc(questionId).get();
+    if (!questionDoc.exists) {
+      response.status(404).json({
+        error: "Question not found.",
+      });
+      return;
+    }
+
+    const questionData = questionDoc.data();
+    const dailySessionId = questionData?.dailySessionId;
+    if (!isNonEmptyString(dailySessionId)) {
+      response.status(400).json({
+        error: "Question does not have a valid dailySessionId.",
+      });
+      return;
+    }
+
+    // 3. 回答 (checkinAnswers) の記録
+    const answerRef = db.collection("checkinAnswers").doc();
+    const answerData = {
+      checkinQuestionId: questionId,
+      studentId: studentId,
+      answerText: body.answer,
+      answeredAt: FieldValue.serverTimestamp(),
+    };
+    await answerRef.set(answerData);
+
+    // 4. 出席レコード (attendanceRecords) の更新または新規作成
+    // dailySession に紐づく scheduleId の取得
+    const sessionDoc = await db.collection("dailySessions").doc(dailySessionId).get();
+    if (!sessionDoc.exists) {
+      response.status(404).json({
+        error: "Daily session not found.",
+      });
+      return;
+    }
+    const sessionData = sessionDoc.data();
+    const scheduleId = sessionData?.scheduleId;
+    if (!isNonEmptyString(scheduleId)) {
+      response.status(400).json({
+        error: "Daily session does not have a valid scheduleId.",
+      });
+      return;
+    }
+
+    // 既存の出席レコードの確認
+    const attendanceQuery = await db
+      .collection("attendanceRecords")
+      .where("studentId", "==", studentId)
+      .where("dailySessionId", "==", dailySessionId)
+      .limit(1)
+      .get();
+
+    if (!attendanceQuery.empty) {
+      // 既存レコードがあれば status を "出席" に更新
+      const attendanceDocRef = attendanceQuery.docs[0].ref;
+      await attendanceDocRef.update({
+        status: "出席",
+        confirmedAt: FieldValue.serverTimestamp(),
+        lastDetectedAt: FieldValue.serverTimestamp(),
+      });
+    } else {
+      // なければ新規作成
+      const newAttendance = {
+        studentId: studentId,
+        dailySessionId: dailySessionId,
+        scheduleId: scheduleId,
+        status: "出席",
+        confirmedAt: FieldValue.serverTimestamp(),
+        firstDetectedAt: FieldValue.serverTimestamp(),
+        lastDetectedAt: FieldValue.serverTimestamp(),
+      };
+      await db.collection("attendanceRecords").add(newAttendance);
+    }
+
+    logger.info("Student answer and attendance registered successfully", {
+      studentId,
+      questionId,
+      dailySessionId,
+      structuredData: true,
+    });
+
+    response.status(200).json({
+      message: "Answer registered and attendance marked successfully.",
+      studentId,
+      questionId,
+      dailySessionId,
+    });
+
+  } catch (err) {
+    logger.error("Error processing student answer", { error: err });
+    response.status(500).json({ error: "Internal server error." });
   }
-
-  logger.info("Student answer attendance received", {
-    questionId: body.questionId,
-    structuredData: true,
-  });
-
-  sendStatus(response, 200);
 });
 
 export const studentAttendanceCalendar = onRequest((request, response) => {
@@ -793,7 +895,7 @@ export const teacherScheduleTeacher = onRequest(async (request, response) => {
     // 2. 操作元ユーザーの存在と教師権限チェック
     const userDoc = await db.collection("users").doc(operatingUserId).get();
     if (!userDoc.exists) {
-      response.status(404).json({error: "Operating user not found."});
+      response.status(404).json({ error: "Operating user not found." });
       return;
     }
     const userData = userDoc.data();
@@ -809,7 +911,7 @@ export const teacherScheduleTeacher = onRequest(async (request, response) => {
     const sessionDoc = await sessionRef.get();
 
     if (!sessionDoc.exists) {
-      response.status(404).json({error: "Daily session not found."});
+      response.status(404).json({ error: "Daily session not found." });
       return;
     }
 
@@ -825,7 +927,7 @@ export const teacherScheduleTeacher = onRequest(async (request, response) => {
     // 4. 紐づく時間割（SCHEDULES）の取得
     const scheduleDoc = await db.collection("schedules").doc(scheduleId).get();
     if (!scheduleDoc.exists) {
-      response.status(404).json({error: "Associated schedule not found."});
+      response.status(404).json({ error: "Associated schedule not found." });
       return;
     }
 
@@ -860,8 +962,8 @@ export const teacherScheduleTeacher = onRequest(async (request, response) => {
     response.status(204).send();
 
   } catch (err) {
-    logger.error("Error updating daily session teacher", {error: err});
-    response.status(500).json({error: "Internal server error."});
+    logger.error("Error updating daily session teacher", { error: err });
+    response.status(500).json({ error: "Internal server error." });
   }
 });
 
@@ -1031,8 +1133,8 @@ export const teacherRegisterBeacon = onRequest(async (request, response) => {
       beaconId: beaconId,
     });
   } catch (err) {
-    logger.error("Error registering teacher beacon", {error: err});
-    response.status(500).json({error: "Internal server error."});
+    logger.error("Error registering teacher beacon", { error: err });
+    response.status(500).json({ error: "Internal server error." });
   }
 });
 
