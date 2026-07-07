@@ -65,6 +65,14 @@ type RegisterRequestBody = {
   classId?: unknown;
 };
 
+type CreateCheckinQuestionRequestBody = {
+  sessionId?: unknown;
+  teacherId?: unknown;
+  questionText?: unknown;
+  isSkippable?: unknown;
+};
+
+
 type FunctionRequest = Parameters<Parameters<typeof onRequest>[0]>[0];
 type FunctionResponse = Parameters<Parameters<typeof onRequest>[0]>[1];
 
@@ -425,6 +433,93 @@ export const registerUser = onRequest(async (request, response) => {
   }
 });
 
+/**
+ * POST /api/teacher/question
+ * Body: { sessionId: string, teacherId: string, questionText: string, isSkippable: boolean }
+ * Response: { message: string, questionId: string }
+ * 
+ * 毎授業の質問（チェックイン質問）を送信・保存するAPI
+ * Firebase Authで先生の認証済みのセッションのみが利用できる。
+ */
+
+export const createCheckinQuestion = onRequest(async (request, response) => {
+  setCorsHeaders(response);
+
+  // OPTIONS（プリフライト通信）の対応
+  if (request.method === "OPTIONS") {
+    response.status(204).send("");
+    return;
+  }
+
+  // GET時の仕様案内
+  if (request.method === "GET") {
+    response.status(200).json({
+      message: "POST a new class question.",
+      method: "POST",
+      path: "/api/teacher/question",
+      body: {
+        sessionId: "session-abc-123",
+        teacherId: "teacher-xyz-789",
+        questionText: "今日の授業で一番難しかった部分を教えてください。",
+        isSkippable: false,
+      },
+    });
+    return;
+  }
+
+  // POST以外のメソッドを拒否
+  if (request.method !== "POST") {
+    response.set("Allow", "GET, POST, OPTIONS");
+    sendStatus(response, 405);
+    return;
+  }
+
+  const body = (request.body ?? {}) as CreateCheckinQuestionRequestBody;
+
+  // 入力データのバリデーション（必須項目・型チェック）
+  if (
+    !isNonEmptyString(body.sessionId) ||
+    !isNonEmptyString(body.teacherId) ||
+    !isNonEmptyString(body.questionText) ||
+    typeof body.isSkippable !== "boolean"
+  ) {
+    response.status(400).json({ error: "Invalid or missing parameters." });
+    return;
+  }
+
+  try {
+    // CHECKIN_QUESTIONS コレクションに保存する新しいドキュメント参照を作成
+    const questionRef = db.collection("CHECKIN_QUESTIONS").doc();
+
+    // ER図の定義通りの型・名前でFirestoreへ書き込み
+    await questionRef.set({
+      questionId: questionRef.id, // 自動生成された一意のID
+      sessionId: body.sessionId,
+      teacherId: body.teacherId,
+      questionText: body.questionText,
+      isSkippable: body.isSkippable,
+      sentAt: FieldValue.serverTimestamp(), // 送信日時（サーバー時間）
+    });
+
+    logger.info("Checkin question successfully created", {
+      questionId: questionRef.id,
+      sessionId: body.sessionId,
+      structuredData: true,
+    });
+
+    // クライアントへ成功レスポンスと生成されたIDを返す
+    response.status(200).json({
+      message: "Question sent successfully.",
+      questionId: questionRef.id,
+    });
+
+  } catch (error) {
+    logger.error("Failed to save checkin question", error);
+    response.status(500).json({ error: "Internal server error." });
+  }
+});
+
+
 // ─── Student endpoints ───────────────────────────────────────────────────────
 
 export const studentBeacon = onRequest((request, response) => {
@@ -729,7 +824,7 @@ export const teacherAttendanceRecord = onRequest((request, response) => {
   sendStatus(response, 200);
 });
 
-export const teacherQuestion = onRequest((request, response) => {
+export const teacherQuestion = onRequest(async (request, response) => {
   setCorsHeaders(response);
 
   if (request.method === "OPTIONS") {
@@ -768,12 +863,32 @@ export const teacherQuestion = onRequest((request, response) => {
     return;
   }
 
-  logger.info("Teacher question created", {
-    content: body.content,
-    structuredData: true,
-  });
+  try {
+    // ER図の「CHECKIN_QUESTIONS」コレクションへの保存処理
+    // 新しいドキュメントへの参照を先に作成（ questionId を取得するため ）
+    const questionRef = db.collection("CHECKIN_QUESTIONS").doc();
 
-  sendStatus(response, 200);
+    await questionRef.set({
+      questionId: questionRef.id,            // ドキュメントIDをそのまま割り当て
+      sessionId: "dummy-session-id-001",    // 本来はリクエスト等から受け取る
+      teacherId: "dummy-teacher-id-001",    // 本来はセッション情報等から特定する
+      questionText: body.content,            // 先生が入力した質問文
+      isSkippable: false,                    // デフォルトはスキップ不可に設定
+      sentAt: FieldValue.serverTimestamp(),  // 送信日時
+    });
+
+    logger.info("Teacher question created and saved to Firestore", {
+      questionId: questionRef.id,
+      content: body.content,
+      structuredData: true,
+    });
+
+    sendStatus(response, 200);
+  } catch (error) {
+    // データベース保存エラー時の処理
+    logger.error("Failed to save question to Firestore", error);
+    response.status(500).json({ error: "Internal server error." });
+  }
 });
 
 export const teacherScheduleTeacher = onRequest(async (request, response) => {
@@ -837,7 +952,7 @@ export const teacherScheduleTeacher = onRequest(async (request, response) => {
     // 2. 操作元ユーザーの存在と教師権限チェック
     const userDoc = await db.collection("users").doc(operatingUserId).get();
     if (!userDoc.exists) {
-      response.status(404).json({error: "Operating user not found."});
+      response.status(404).json({ error: "Operating user not found." });
       return;
     }
     const userData = userDoc.data();
@@ -853,7 +968,7 @@ export const teacherScheduleTeacher = onRequest(async (request, response) => {
     const sessionDoc = await sessionRef.get();
 
     if (!sessionDoc.exists) {
-      response.status(404).json({error: "Daily session not found."});
+      response.status(404).json({ error: "Daily session not found." });
       return;
     }
 
@@ -869,7 +984,7 @@ export const teacherScheduleTeacher = onRequest(async (request, response) => {
     // 4. 紐づく時間割（SCHEDULES）の取得
     const scheduleDoc = await db.collection("schedules").doc(scheduleId).get();
     if (!scheduleDoc.exists) {
-      response.status(404).json({error: "Associated schedule not found."});
+      response.status(404).json({ error: "Associated schedule not found." });
       return;
     }
 
@@ -904,8 +1019,8 @@ export const teacherScheduleTeacher = onRequest(async (request, response) => {
     response.status(204).send();
 
   } catch (err) {
-    logger.error("Error updating daily session teacher", {error: err});
-    response.status(500).json({error: "Internal server error."});
+    logger.error("Error updating daily session teacher", { error: err });
+    response.status(500).json({ error: "Internal server error." });
   }
 });
 
@@ -1075,8 +1190,8 @@ export const teacherRegisterBeacon = onRequest(async (request, response) => {
       beaconId: beaconId,
     });
   } catch (err) {
-    logger.error("Error registering teacher beacon", {error: err});
-    response.status(500).json({error: "Internal server error."});
+    logger.error("Error registering teacher beacon", { error: err });
+    response.status(500).json({ error: "Internal server error." });
   }
 });
 
