@@ -72,6 +72,17 @@ type CreateCheckinQuestionRequestBody = {
   isSkippable?: unknown;
 };
 
+type StudentDailyAttendanceQuery = {
+  session?: string;
+  studentId?: string; // USERS.userId
+  date?: string;      // "2026-10-13" 形式の文字列
+};
+
+type StudentSubjectHistoryQuery = {
+  session?: string;
+  scheduleId?: string;
+  studentId?: string;
+};
 
 type FunctionRequest = Parameters<Parameters<typeof onRequest>[0]>[0];
 type FunctionResponse = Parameters<Parameters<typeof onRequest>[0]>[1];
@@ -1382,6 +1393,250 @@ export const adminGenerateDailySessions = onRequest(async (request, response) =>
   }
 });
 
+const STATUS_MAP_TO_JP: Record<string, string> = {
+  present: "出席",
+  absent: "欠席",
+  late: "遅刻",
+  early_leave: "早退",
+  mid_absence: "中抜け",
+  excused: "公欠"
+};
+
+// 4桁の数値（hhmm）を "hh:mm" 形式の文字列に変換するヘルパー
+function formatHhmm(timeInt: number | undefined): string {
+  if (timeInt === undefined || timeInt === null) return "00:00";
+  const str = timeInt.toString().padStart(4, "0");
+  return `${str.substring(0, 2)}:${str.substring(2, 4)}`;
+}
+
+/**
+ * カレンダー用：指定日の授業・出欠一覧API
+ * GET /api/attendance/student-daily-report
+ * Query: ?session=xxx&studentId=student001&date=2026-10-13
+ */
+export const getStudentDailyReport = onRequest(async (request, response) => {
+  setCorsHeaders(response);
+  if (request.method === "OPTIONS") { response.status(204).send(""); return; }
+  if (request.method !== "GET") { response.set("Allow", "GET, OPTIONS"); sendStatus(response, 405); return; }
+
+  const query = (request.query ?? {}) as StudentDailyAttendanceQuery;
+  const { session, studentId, date } = query;
+
+  if (!session) { response.status(401).json({ error: "Session token is required." }); return; }
+  if (!studentId || !date) { response.status(400).json({ error: "studentId and date are required." }); return; }
+
+  try {
+    // 1. DAILY_SESSIONS から指定日の授業コマを取得
+    const startOfDay = new Date(`${date}T00:00:00.000Z`);
+    const endOfDay = new Date(`${date}T23:59:59.999Z`);
+
+    const dailySessionsSnapshot = await db.collection("DAILY_SESSIONS")
+      .where("date", ">=", admin.firestore.Timestamp.fromDate(startOfDay))
+      .where("date", "<=", admin.firestore.Timestamp.fromDate(endOfDay))
+      .get();
+
+    if (dailySessionsSnapshot.empty) {
+      response.status(200).json({ date, sessions: [] });
+      return;
+    }
+
+    // 2. マスタデータの一括キャッシュ（N+1問題の防止）
+    // SESSIONS（受講情報）の取得
+    const studentSessionsSnapshot = await db.collection("SESSIONS")
+      .where("studentId", "==", studentId)
+      .get();
+
+    const scheduleToSessionMap: Record<string, string> = {};
+    studentSessionsSnapshot.forEach((doc) => {
+      const data = doc.data();
+      if (data.scheduleId) scheduleToSessionMap[data.scheduleId] = doc.id;
+    });
+
+    // ATTENDANCE_RECORDS（出欠レコード）の取得
+    const mySessionIds = Object.values(scheduleToSessionMap);
+    const attendanceRecordsMap: Record<string, any> = {};
+
+    if (mySessionIds.length > 0) {
+      const recordsSnapshot = await db.collection("ATTENDANCE_RECORDS")
+        .where("sessionId", "in", mySessionIds)
+        .where("userId", "==", studentId)
+        .get();
+
+      recordsSnapshot.forEach((doc) => {
+        const rData = doc.data();
+        if (rData.sessionId) {
+          attendanceRecordsMap[rData.sessionId] = rData;
+        }
+      });
+    }
+
+    // PERIODS（時限マスタ）の取得
+    const periodsSnapshot = await db.collection("PERIODS").get();
+    const periodsMap: Record<string, { startAt: number; endAt: number; period: number }> = {};
+    periodsSnapshot.forEach((doc) => {
+      const pData = doc.data();
+      periodsMap[doc.id] = { startAt: pData.startAt, endAt: pData.endAt, period: pData.period };
+    });
+
+    // 3. 各授業コマのデータと各種マスタを紐づける
+    const sessionsPromises = dailySessionsSnapshot.docs.map(async (dsDoc) => {
+      const dsData = dsDoc.data();
+      const scheduleId = dsData.scheduleId;
+
+      let subjectName = "未設定";
+      let startTime = "00:00";
+      let endTime = "00:00";
+      let periodNumber = 1;
+
+      // SCHEDULES を経由して科目名と時限情報を取得
+      if (scheduleId) {
+        const scheduleDoc = await db.collection("SCHEDULES").doc(scheduleId).get();
+        if (scheduleDoc.exists) {
+          const sData = scheduleDoc.data();
+          subjectName = sData?.subjectName ?? "未設定";
+
+          // PERIODSマスタから時間と何限目かを取得
+          const periodId = sData?.periodId;
+          if (periodId && periodsMap[periodId]) {
+            startTime = formatHhmm(periodsMap[periodId].startAt);
+            endTime = formatHhmm(periodsMap[periodId].endAt);
+            periodNumber = periodsMap[periodId].period;
+          }
+        }
+      }
+
+      // 出欠データの照合
+      const mySessionId = scheduleId ? scheduleToSessionMap[scheduleId] : null;
+      const rData = mySessionId ? attendanceRecordsMap[mySessionId] : null;
+      const dbStatus = rData?.status ?? "absent";
+      const statusJp = STATUS_MAP_TO_JP[dbStatus] ?? "欠席";
+
+      return {
+        scheduleId: scheduleId ?? "",
+        dailySessionsId: dsDoc.id,
+        subjectName,
+        startTime,
+        endTime,
+        period: periodNumber,
+        status: statusJp,
+      };
+    });
+
+    const sessionsData = await Promise.all(sessionsPromises);
+
+    // フロントで時間割順に並び替えやすいようソート
+    sessionsData.sort((a, b) => a.period - b.period);
+
+    response.status(200).json({ date, sessions: sessionsData });
+  } catch (err) {
+    logger.error("getStudentDailyReport error", err);
+    response.status(500).json({ error: "Internal server error." });
+  }
+});
+
+/**
+ * 詳細画面用：特定科目の授業履歴・集計API
+ * GET /api/attendance/student-subject-history
+ * Query: ?session=xxx&scheduleId=schedule101&studentId=student001
+ */
+
+export const getStudentSubjectHistory = onRequest(async (request, response) => {
+  setCorsHeaders(response);
+  if (request.method === "OPTIONS") { response.status(204).send(""); return; }
+  if (request.method !== "GET") { response.set("Allow", "GET, OPTIONS"); sendStatus(response, 405); return; }
+
+  const query = (request.query ?? {}) as StudentSubjectHistoryQuery;
+  const { session, scheduleId, studentId } = query;
+
+  if (!session) { response.status(401).json({ error: "Session token is required." }); return; }
+  if (!scheduleId || !studentId) { response.status(400).json({ error: "scheduleId and studentId are required." }); return; }
+
+  try {
+    // 1. SCHEDULES から科目名を取得
+    const scheduleDoc = await db.collection("SCHEDULES").doc(scheduleId).get();
+    if (!scheduleDoc.exists) { response.status(404).json({ error: "Subject schedule not found." }); return; }
+    const subjectName = scheduleDoc.data()?.subjectName ?? "未設定";
+
+    // 2. この科目の全授業コマ（DAILY_SESSIONS）を日付の降順（最新順）で取得
+    const dailySessionsSnapshot = await db.collection("DAILY_SESSIONS")
+      .where("scheduleId", "==", scheduleId)
+      .orderBy("date", "desc")
+      .get();
+
+    // 3. SESSIONS から受講セッションを取得
+    const studentSessionSnapshot = await db.collection("SESSIONS")
+      .where("scheduleId", "==", scheduleId)
+      .where("studentId", "==", studentId)
+      .limit(1)
+      .get();
+
+    let mySessionId: string | null = null;
+    if (!studentSessionSnapshot.empty) {
+      mySessionId = studentSessionSnapshot.docs[0].id;
+    }
+
+    // 4. ATTENDANCE_RECORDS を取得してマップ化
+    const attendanceRecordsMap: Record<string, string> = {};
+    if (mySessionId) {
+      const recordsSnapshot = await db.collection("ATTENDANCE_RECORDS")
+        .where("sessionId", "==", mySessionId)
+        .where("userId", "==", studentId)
+        .get();
+
+      recordsSnapshot.forEach((doc) => {
+        const rData = doc.data();
+        if (rData.sessionId) {
+          attendanceRecordsMap[rData.sessionId] = rData.status ?? "absent";
+        }
+      });
+    }
+
+    // 5. 円グラフ集計用カウンターの初期化
+    const stats = {
+      出席: 0,
+      欠席: 0,
+      遅刻: 0,
+      公欠: 0,
+      早退: 0,
+      全授業: dailySessionsSnapshot.size,
+    };
+
+    // 6. 授業回数（第10回、第9回…）を含めた履歴配列の生成
+    const totalCount = dailySessionsSnapshot.size;
+    const history = dailySessionsSnapshot.docs.map((dsDoc, index) => {
+      const dsData = dsDoc.data();
+
+      // 今回の最新ER図の関係性に準拠し、受講セッションのステータスを取得
+      const dbStatus = mySessionId ? attendanceRecordsMap[mySessionId] : "absent";
+      const statusJp = STATUS_MAP_TO_JP[dbStatus] ?? "欠席";
+
+      if (statusJp in stats) {
+        stats[statusJp as keyof typeof stats]++;
+      }
+
+      // タイムスタンプを "10月22日" のようなフォーマット文字列に変換
+      const rawDate = dsData.date ? dsData.date.toDate() : new Date();
+      const formattedDate = `${rawDate.getMonth() + 1}月${rawDate.getDate()}日`;
+
+      return {
+        dailySessionsId: dsDoc.id,
+        count: totalCount - index, // 最新のコマが最大回数（例: 第10回）になるよう降順連番を振る
+        date: formattedDate,
+        status: statusJp,
+      };
+    });
+
+    response.status(200).json({
+      scheduleId,
+      subjectName,
+      stats,
+      history,
+    });
+  } catch (err) {
+    logger.error("getStudentSubjectHistory error", err);
+    response.status(500).json({ error: "Internal server error." });
+  }
+});
 
 const sendStatus = (
   response: FunctionResponse,
