@@ -2,6 +2,8 @@ import type { NextPage } from 'next';
 import { useRouter } from 'next/router';
 import { useState } from 'react';
 import styles from '../styles/Class.module.css';
+import UserProfileButton from '../components/UserProfileButton';
+
 
 function BellIcon() {
   return (
@@ -123,7 +125,7 @@ const ClassPage: NextPage = () => {
             >担任クラス</button>
           </div>
           <button className={styles.iconBtn}><BellIcon /></button>
-          <button className={styles.iconBtn}><UserCircleIcon /></button>
+          <UserProfileButton />
         </div>
       </div>
 

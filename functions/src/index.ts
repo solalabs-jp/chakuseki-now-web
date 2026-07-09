@@ -1,15 +1,15 @@
-import { setGlobalOptions } from "firebase-functions";
-import { onRequest } from "firebase-functions/https";
+import {setGlobalOptions} from "firebase-functions";
+import {onRequest} from "firebase-functions/https";
 import * as logger from "firebase-functions/logger";
 import * as admin from "firebase-admin";
-import { FieldValue } from "firebase-admin/firestore";
+import {FieldValue} from "firebase-admin/firestore";
 import * as https from "https";
 import * as http from "http";
 
 admin.initializeApp();
 const db = admin.firestore();
 
-setGlobalOptions({ maxInstances: 10 });
+setGlobalOptions({maxInstances: 10});
 
 type BeaconRequestBody = {
   beaconId?: unknown;
@@ -105,7 +105,6 @@ const attendanceSummaryData = [
 ];
 
 
-
 const attendanceBookData = [
   {
     grade: "2",
@@ -146,6 +145,8 @@ const attendanceBookData = [
  * Firebase Identity Toolkit REST API でサインインし、
  * Firestore の users コレクションからロール情報を付加して返す。
  */
+
+
 export const loginWithEmailPassword = onRequest(async (request, response) => {
   setCorsHeaders(response);
 
@@ -176,13 +177,13 @@ export const loginWithEmailPassword = onRequest(async (request, response) => {
   const body = (request.body ?? {}) as LoginRequestBody;
 
   if (!isNonEmptyString(body.email) || !isNonEmptyString(body.password)) {
-    response.status(400).json({ error: "email and password are required." });
+    response.status(400).json({error: "email and password are required."});
     return;
   }
 
   if (!FIREBASE_API_KEY) {
     logger.error("FIREBASE_API_KEY is not set");
-    response.status(500).json({ error: "Server configuration error." });
+    response.status(500).json({error: "Server configuration error."});
     return;
   }
 
@@ -198,13 +199,19 @@ export const loginWithEmailPassword = onRequest(async (request, response) => {
     const errorObj = signInResult.error as { message?: string } | undefined;
     if (errorObj) {
       const code = errorObj.message ?? "UNKNOWN";
-      logger.warn("Login failed", { code, email: body.email });
+      logger.warn("Login failed", {
+        code,
+        email: body.email,
+      });
 
-      if (code === "EMAIL_NOT_FOUND" || code === "INVALID_PASSWORD" ||
-        code === "INVALID_LOGIN_CREDENTIALS") {
-        response.status(401).json({ error: "Invalid email or password." });
+      if (
+        code === "EMAIL_NOT_FOUND" ||
+        code === "INVALID_PASSWORD" ||
+        code === "INVALID_LOGIN_CREDENTIALS"
+      ) {
+        response.status(401).json({error: "Invalid email or password."});
       } else {
-        response.status(400).json({ error: code });
+        response.status(400).json({error: code});
       }
       return;
     }
@@ -216,26 +223,39 @@ export const loginWithEmailPassword = onRequest(async (request, response) => {
     //    uid が Firestore の doc ID と一致しない場合は email で検索
     let role: string | null = null;
     let userId: string | null = null;
+    let displayName: string | null = null;
+    let grade: string | null = null;
+    let className: string | null = null;
+    let email: string | null = null;
 
     // まず uid で直接引く
     const directDoc = await db.collection("users").doc(uid).get();
     if (directDoc.exists) {
       role = directDoc.data()?.role ?? null;
       userId = uid;
+      displayName = directDoc.data()?.displayName ?? null;
+      grade = directDoc.data()?.grade ?? null;
+      className = directDoc.data()?.className ?? null;
+      email = directDoc.data()?.email ?? null;
     }
 
-    logger.info("Login successful", { uid, role, structuredData: true });
+    logger.info("Login successful", {uid, role, structuredData: true});
 
     response.status(200).json({
       idToken,
       uid,
       userId,
       role,
+      displayName,
+      grade,
+      className,
+      email,
       expiresIn: signInResult.expiresIn as string,
     });
-  } catch (err) {
-    logger.error("authLogin error", err);
-    response.status(500).json({ error: "Internal server error." });
+  } catch (err: unknown) {
+    const errObj = err as Record<string, unknown>;
+    logger.error("authLogin error", {error: errObj});
+    response.status(500).json({error: "Internal server error."});
   }
 });
 
@@ -261,10 +281,13 @@ function callIdentityToolkit(payload: {
       // エミュレータ: http でローカルホストを叩く
       const [hostname, portStr] = emulatorHost.split(":");
       requester = http;
+      const requestPath =
+        "/identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=" +
+        "fake-api-key";
       options = {
         hostname,
         port: portStr ? parseInt(portStr, 10) : 9099,
-        path: `/identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=fake-api-key`,
+        path: requestPath,
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -274,9 +297,12 @@ function callIdentityToolkit(payload: {
     } else {
       // 本番: https で Identity Toolkit を叩く
       requester = https;
+      const requestPath =
+        "/v1/accounts:signInWithPassword?key=" +
+        FIREBASE_API_KEY;
       options = {
         hostname: "identitytoolkit.googleapis.com",
-        path: `/v1/accounts:signInWithPassword?key=${FIREBASE_API_KEY}`,
+        path: requestPath,
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -325,7 +351,7 @@ export const registerUser = onRequest(async (request, response) => {
       path: "/api/auth/register",
       body: {
         email: "newuser@example.com",
-        password: "password123",
+        password: "password123  ",
         role: "student",
         classId: "class-2A",
       },
@@ -341,8 +367,14 @@ export const registerUser = onRequest(async (request, response) => {
 
   const body = (request.body ?? {}) as RegisterRequestBody;
 
-  if (!isNonEmptyString(body.email) || !isNonEmptyString(body.password) || !isNonEmptyString(body.role)) {
-    response.status(400).json({ error: "email, password, and role are required." });
+  if (
+    !isNonEmptyString(body.email) ||
+    !isNonEmptyString(body.password) ||
+    !isNonEmptyString(body.role)
+  ) {
+    response.status(400).json({
+      error: "email, password, and role are required.",
+    });
     return;
   }
 
@@ -364,18 +396,23 @@ export const registerUser = onRequest(async (request, response) => {
 
     await db.collection("users").doc(userRecord.uid).set(userData);
 
-    logger.info("User registered successfully", { uid: userRecord.uid, role: body.role, structuredData: true });
+    logger.info("User registered successfully", {
+      uid: userRecord.uid,
+      role: body.role,
+      structuredData: true,
+    });
 
     response.status(201).json({
       uid: userRecord.uid,
       message: "User registered successfully.",
     });
-  } catch (err: any) {
-    logger.error("Error registering user", { error: err });
-    if (err.code === "auth/email-already-exists") {
-      response.status(409).json({ error: "Email already exists." });
+  } catch (err: unknown) {
+    const errObj = err as Record<string, unknown>;
+    logger.error("Error registering user", {error: errObj});
+    if (String(errObj?.code) === "auth/email-already-exists") {
+      response.status(409).json({error: "Email already exists."});
     } else {
-      response.status(500).json({ error: "Internal server error." });
+      response.status(500).json({error: "Internal server error."});
     }
   }
 });
@@ -566,7 +603,8 @@ export const studentTimetable = onRequest(async (request, response) => {
 
   if (request.method === "GET" && !request.headers.authorization) {
     response.status(200).json({
-      message: "Add Authorization header (Bearer token) to get timetable.",
+      message:
+        "Add Authorization header (Bearer token) to get timetable.",
       method: "GET",
       path: "/api/student/timetable",
     });
@@ -581,14 +619,16 @@ export const studentTimetable = onRequest(async (request, response) => {
 
   const uid = await verifyToken(request);
   if (!uid) {
-    response.status(401).json({ error: "Unauthorized. Invalid or missing token." });
+    response.status(401).json({
+      error: "Unauthorized. Invalid or missing token.",
+    });
     return;
   }
 
   try {
     const userDoc = await db.collection("users").doc(uid).get();
     if (!userDoc.exists) {
-      response.status(404).json({ error: "User not found." });
+      response.status(404).json({error: "User not found."});
       return;
     }
 
@@ -596,30 +636,34 @@ export const studentTimetable = onRequest(async (request, response) => {
     const classId = userData?.classId;
 
     if (!classId) {
-      response.status(404).json({ error: "User does not belong to any class." });
+      response.status(404).json({error: "User does not belong to any class."});
       return;
     }
 
-    const timetablesSnapshot = await db.collection("timetables").where("classId", "==", classId).get();
-    
+    const timetablesRef = db
+      .collection("timetables")
+      .where("classId", "==", classId);
+    const timetablesSnapshot = await timetablesRef.get();
+
     if (timetablesSnapshot.empty) {
       response.status(200).json([]);
       return;
     }
 
-    const timetables = timetablesSnapshot.docs.map(doc => {
+    const timetables = timetablesSnapshot.docs.map((doc) => {
       const data = doc.data();
       return {
         subjectName: data.subjectName,
         period: data.period,
-        dayOfWeek: data.dayOfWeek
+        dayOfWeek: data.dayOfWeek,
       };
     });
 
     response.status(200).json(timetables);
   } catch (err) {
-    logger.error("Error fetching timetable", { error: err });
-    response.status(500).json({ error: "Internal server error." });
+    const errObj = err as Record<string, unknown>;
+    logger.error("Error fetching timetable", {error: errObj});
+    response.status(500).json({error: "Internal server error."});
   }
 });
 
@@ -854,10 +898,15 @@ const isLocation = (value: unknown): boolean => {
   const latitude = location.latitude ?? location.lat;
   const longitude = location.longitude ?? location.lng;
 
-  return typeof latitude === "number" && typeof longitude === "number";
+  return (
+    typeof latitude === "number" &&
+    typeof longitude === "number"
+  );
 };
 
-const verifyToken = async (request: FunctionRequest): Promise<string | null> => {
+const verifyToken = async (
+  request: FunctionRequest
+): Promise<string | null> => {
   const authHeader = request.headers.authorization;
   if (!authHeader || !authHeader.startsWith("Bearer ")) {
     return null;
@@ -867,7 +916,11 @@ const verifyToken = async (request: FunctionRequest): Promise<string | null> => 
     const decodedToken = await admin.auth().verifyIdToken(idToken);
     return decodedToken.uid;
   } catch (err) {
-    logger.warn("Token verification failed", { error: err });
+    const errObj = err as Record<string, unknown>;
+    logger.warn(
+      "Token verification failed",
+      {error: errObj}
+    );
     return null;
   }
 };

@@ -2,6 +2,8 @@ import type { NextPage } from 'next';
 import { useRouter } from 'next/router';
 import { useState } from 'react';
 import styles from '../styles/Promotion.module.css';
+import UserProfileButton from '../components/UserProfileButton';
+
 
 function BellIcon() {
   return (
@@ -86,7 +88,7 @@ const PromotionPage: NextPage = () => {
         </div>
         <div className={styles.headerRight}>
           <button className={styles.iconBtn}><BellIcon /></button>
-          <button className={styles.iconBtn}><UserCircleIcon /></button>
+          <UserProfileButton />
         </div>
       </div>
 

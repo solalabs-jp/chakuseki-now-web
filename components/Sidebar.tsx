@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { useRouter } from 'next/router';
+import UserProfileButton from './UserProfileButton';
 import styles from '../styles/Sidebar.module.css';
 
 function GridIcon() {
@@ -135,6 +136,7 @@ export default function Sidebar() {
           <span className={styles.userName}>小山 小山</span>
           <span className={styles.userSub}>Homeroom 2A</span>
         </div>
+        <UserProfileButton />
       </div>
     </aside>
   );
