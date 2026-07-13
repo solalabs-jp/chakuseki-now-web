@@ -4,7 +4,7 @@ import { onSchedule } from "firebase-functions/scheduler";
 
 import * as logger from "firebase-functions/logger";
 import * as admin from "firebase-admin";
-import { FieldValue, Timestamp } from "firebase-admin/firestore";
+import { FieldValue, GeoPoint, Timestamp } from "firebase-admin/firestore";
 import * as https from "https";
 import * as http from "http";
 
@@ -390,7 +390,7 @@ export const registerUser = onRequest(async (request, response) => {
 
 // ─── Student endpoints ───────────────────────────────────────────────────────
 
-export const studentBeacon = onRequest((request, response) => {
+export const studentBeacon = onRequest(async (request, response) => {
   setCorsHeaders(response);
 
   if (request.method === "OPTIONS") {
@@ -428,17 +428,47 @@ export const studentBeacon = onRequest((request, response) => {
     return;
   }
 
-  if (body.session !== DUMMY_STUDENT_SESSION) {
+  const uid = await verifyToken(request);
+  if (!uid && body.session !== DUMMY_STUDENT_SESSION) {
     sendStatus(response, 401);
     return;
   }
 
-  logger.info("Student beacon received", {
-    beaconId: body.beaconId,
-    structuredData: true,
-  });
+  try {
+    const dailySessionId = await findDailySessionIdByBeacon(body.beaconId);
 
-  sendStatus(response, 200);
+    if (!dailySessionId) {
+      logger.warn("No matching daily session found for beacon", {
+        beaconId: body.beaconId,
+        structuredData: true,
+      });
+      response.status(404).json({ error: "No matching class session found." });
+      return;
+    }
+
+    const studentId = uid ?? "student-001";
+    const studentGeopoint = toGeoPoint(body.location);
+
+    await db.collection("sessions").add({
+      studentId,
+      dailySessionId,
+      beaconId: body.beaconId,
+      studentGeopoint,
+      createdAt: FieldValue.serverTimestamp(),
+    });
+
+    logger.info("Student beacon received", {
+      beaconId: body.beaconId,
+      dailySessionId,
+      studentId,
+      structuredData: true,
+    });
+
+    response.status(200).json({ dailySessionId });
+  } catch (err) {
+    logger.error("Error processing student beacon", { error: err });
+    response.status(500).json({ error: "Internal server error." });
+  }
 });
 
 export const studentAnswer = onRequest((request, response) => {
@@ -1309,6 +1339,113 @@ const isLocation = (value: unknown): boolean => {
   const longitude = location.longitude ?? location.lng;
 
   return typeof latitude === "number" && typeof longitude === "number";
+};
+
+/**
+ * isLocation で検証済みの location を Firestore GeoPoint に変換する。
+ * @param {unknown} value - isLocation を通過済みの location オブジェクト
+ * @return {GeoPoint} Firestore GeoPoint
+ */
+const toGeoPoint = (value: unknown): GeoPoint => {
+  const location = value as Record<string, unknown>;
+  const latitude = (location.latitude ?? location.lat) as number;
+  const longitude = (location.longitude ?? location.lng) as number;
+  return new GeoPoint(latitude, longitude);
+};
+
+/**
+ * 現在時刻 (JST) が該当する periods ドキュメントの ID を取得する。
+ * startAt <= 現在時刻 <= endAt (HHmm文字列の比較) で判定する。
+ * 該当する時限が無い場合は null を返す。
+ * @return {Promise<string | null>} 該当する periods ドキュメントID
+ */
+const getCurrentPeriodId = async (): Promise<string | null> => {
+  const jstNow = new Date(Date.now() + 9 * 60 * 60 * 1000);
+  const currentHHmm =
+    String(jstNow.getUTCHours()).padStart(2, "0") +
+    String(jstNow.getUTCMinutes()).padStart(2, "0");
+
+  const periodsSnapshot = await db.collection("periods").get();
+
+  for (const periodDoc of periodsSnapshot.docs) {
+    const { startAt, endAt } = periodDoc.data();
+    if (
+      isNonEmptyString(startAt) &&
+      isNonEmptyString(endAt) &&
+      currentHHmm >= startAt &&
+      currentHHmm <= endAt
+    ) {
+      return periodDoc.id;
+    }
+  }
+
+  return null;
+};
+
+/**
+ * 今日 (JST) 00:00:00 を表す Timestamp を取得する。
+ * dailySessions.date (JST 00:00 で保存されている) との比較に使用する。
+ * @return {Timestamp} 本日 0 時の Timestamp
+ */
+const getTodayTimestamp = (): Timestamp => {
+  const jstNow = new Date(Date.now() + 9 * 60 * 60 * 1000);
+  const todayStr = `${jstNow.getUTCFullYear()}-${String(jstNow.getUTCMonth() + 1).padStart(2, "0")}-${String(jstNow.getUTCDate()).padStart(2, "0")}`;
+  return Timestamp.fromDate(new Date(`${todayStr}T00:00:00+09:00`));
+};
+
+/**
+ * beaconId から、現在の時限・本日の日付に一致する dailySessions のドキュメントIDを取得する。
+ * 1. 現在時刻から該当する periodId を判定
+ * 2. beaconId を登録している教師 (users) を検索し teacherId を取得
+ * 3. その教師が本日担当する dailySessions のうち、紐づく schedules.periodId が
+ *    一致するものを取得する (一致するものは1件のみのはず)
+ * 判定できない・見つからない場合は null を返す。
+ * @param {string} beaconId - 検知した Beacon ID
+ * @return {Promise<string | null>} 一致した dailySessions のドキュメントID
+ */
+const findDailySessionIdByBeacon = async (
+  beaconId: string
+): Promise<string | null> => {
+  const periodId = await getCurrentPeriodId();
+  if (!periodId) {
+    logger.warn("No period matches the current time.");
+    return null;
+  }
+
+  const teacherSnapshot = await db
+    .collection("users")
+    .where("beaconId", "==", beaconId)
+    .where("role", "==", "teacher")
+    .limit(1)
+    .get();
+
+  if (teacherSnapshot.empty) {
+    logger.warn("No teacher found for beaconId", { beaconId });
+    return null;
+  }
+
+  const teacherId = teacherSnapshot.docs[0].id;
+  const todayTimestamp = getTodayTimestamp();
+
+  const dailySessionsSnapshot = await db
+    .collection("dailySessions")
+    .where("teacherId", "==", teacherId)
+    .where("date", "==", todayTimestamp)
+    .get();
+
+  for (const dailySessionDoc of dailySessionsSnapshot.docs) {
+    const scheduleId = dailySessionDoc.data().scheduleId;
+    if (!isNonEmptyString(scheduleId)) {
+      continue;
+    }
+
+    const scheduleDoc = await db.collection("schedules").doc(scheduleId).get();
+    if (scheduleDoc.exists && scheduleDoc.data()?.periodId === periodId) {
+      return dailySessionDoc.id;
+    }
+  }
+
+  return null;
 };
 
 const verifyToken = async (request: FunctionRequest): Promise<string | null> => {
