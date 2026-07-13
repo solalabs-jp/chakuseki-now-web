@@ -526,14 +526,67 @@ export const studentAnswer = onRequest(async (request, response) => {
     };
     await answerRef.set(answerData);
 
-    logger.info("Student answer registered successfully", {
+    // 4. 出席レコード (attendanceRecords) の更新または新規作成
+    // dailySession に紐づく scheduleId の取得
+    const sessionDoc = await db.collection("dailySessions").doc(dailySessionId).get();
+    if (!sessionDoc.exists) {
+      response.status(404).json({
+        error: "Daily session not found.",
+      });
+      return;
+    }
+    const sessionData = sessionDoc.data();
+    const scheduleId = sessionData?.scheduleId;
+    if (!isNonEmptyString(scheduleId)) {
+      response.status(400).json({
+        error: "Daily session does not have a valid scheduleId.",
+      });
+      return;
+    }
+
+    // 既存の出席レコードの確認
+    const attendanceQuery = await db
+      .collection("attendanceRecords")
+      .where("studentId", "==", studentId)
+      .where("dailySessionId", "==", dailySessionId)
+      .limit(1)
+      .get();
+
+    if (!attendanceQuery.empty) {
+      // 既存レコードがあれば status を "出席" に更新
+      const attendanceDocRef = attendanceQuery.docs[0].ref;
+      await attendanceDocRef.update({
+        status: "出席",
+        confirmedAt: FieldValue.serverTimestamp(),
+        lastDetectedAt: FieldValue.serverTimestamp(),
+      });
+    } else {
+      // なければ新規作成
+      const newAttendance = {
+        studentId: studentId,
+        dailySessionId: dailySessionId,
+        scheduleId: scheduleId,
+        status: "出席",
+        confirmedAt: FieldValue.serverTimestamp(),
+        firstDetectedAt: FieldValue.serverTimestamp(),
+        lastDetectedAt: FieldValue.serverTimestamp(),
+      };
+      await db.collection("attendanceRecords").add(newAttendance);
+    }
+
+    logger.info("Student answer and attendance registered successfully", {
       studentId,
       questionId,
       dailySessionId,
       structuredData: true,
     });
 
-    response.status(200).json(true);
+    response.status(200).json({
+      message: "Answer registered and attendance marked successfully.",
+      studentId,
+      questionId,
+      dailySessionId,
+    });
 
   } catch (err) {
     logger.error("Error processing student answer", { error: err });
