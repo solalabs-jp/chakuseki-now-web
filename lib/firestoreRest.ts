@@ -1,7 +1,9 @@
 import fs from "fs";
 import os from "os";
 import path from "path";
-import { UserRefreshClient } from "google-auth-library";
+import { GoogleAuth, UserRefreshClient } from "google-auth-library";
+
+const FIRESTORE_SCOPE = "https://www.googleapis.com/auth/datastore";
 
 const PROJECT_ID =
   process.env.FIREBASE_PROJECT_ID ??
@@ -31,19 +33,24 @@ type CliConfig = {
 };
 
 let cachedToken: { value: string; expiresAt: number } | null = null;
+let googleAuth: GoogleAuth | null = null;
 
-function readCliConfig(): CliConfig {
-  const configFile = path.join(
-    os.homedir(),
-    ".config",
-    "configstore",
-    "firebase-tools.json"
-  );
-  return JSON.parse(fs.readFileSync(configFile, "utf8")) as CliConfig;
+const CLI_CONFIG_FILE = path.join(
+  os.homedir(),
+  ".config",
+  "configstore",
+  "firebase-tools.json"
+);
+
+function readCliConfig(): CliConfig | null {
+  if (!fs.existsSync(CLI_CONFIG_FILE)) {
+    return null;
+  }
+  return JSON.parse(fs.readFileSync(CLI_CONFIG_FILE, "utf8")) as CliConfig;
 }
 
 /** Pick the tokens for the account active in this working directory. */
-function selectAccountTokens(config: CliConfig): CliTokens {
+function selectAccountTokens(config: CliConfig): CliTokens | null {
   const activeEmail =
     config.activeAccounts?.[process.cwd()] ?? config.user?.email;
 
@@ -58,21 +65,24 @@ function selectAccountTokens(config: CliConfig): CliTokens {
     return match.tokens;
   }
 
-  if (config.tokens) {
-    return config.tokens;
-  }
-
-  throw new Error(
-    "No Firebase CLI credentials found. Run `firebase login` (or `firebase login:use <email>`)."
-  );
+  return config.tokens ?? null;
 }
 
-async function getCliAccessToken(): Promise<string> {
-  if (cachedToken && cachedToken.expiresAt - Date.now() > 60_000) {
-    return cachedToken.value;
+/**
+ * Local dev: use the token stored by `firebase login`, refreshing it when the
+ * cached access_token has expired. Returns null when no CLI credentials exist
+ * (e.g. on App Hosting / Cloud Run), so the caller can fall back to ADC.
+ */
+async function getCliAccessToken(): Promise<string | null> {
+  const config = readCliConfig();
+  if (!config) {
+    return null;
   }
 
-  const tokens = selectAccountTokens(readCliConfig());
+  const tokens = selectAccountTokens(config);
+  if (!tokens) {
+    return null;
+  }
 
   // Reuse the cached access_token while it is still comfortably valid.
   if (
@@ -80,7 +90,6 @@ async function getCliAccessToken(): Promise<string> {
     typeof tokens.expires_at === "number" &&
     tokens.expires_at - Date.now() > 60_000
   ) {
-    cachedToken = { value: tokens.access_token, expiresAt: tokens.expires_at };
     return tokens.access_token;
   }
 
@@ -106,6 +115,40 @@ async function getCliAccessToken(): Promise<string> {
     expiresAt: credentials.expiry_date ?? Date.now() + 55 * 60_000,
   };
   return accessToken;
+}
+
+/**
+ * Deployed environments (App Hosting / Cloud Run): use the runtime service
+ * account via Application Default Credentials. Also works locally after
+ * `gcloud auth application-default login`.
+ */
+async function getAdcAccessToken(): Promise<string> {
+  if (!googleAuth) {
+    googleAuth = new GoogleAuth({ scopes: [FIRESTORE_SCOPE] });
+  }
+  const client = await googleAuth.getClient();
+  const { token } = await client.getAccessToken();
+  if (!token) {
+    throw new Error(
+      "Failed to obtain an access token from Application Default Credentials."
+    );
+  }
+  const expiryDate = client.credentials.expiry_date ?? Date.now() + 55 * 60_000;
+  cachedToken = { value: token, expiresAt: expiryDate };
+  return token;
+}
+
+async function getAccessToken(): Promise<string> {
+  if (cachedToken && cachedToken.expiresAt - Date.now() > 60_000) {
+    return cachedToken.value;
+  }
+
+  const cliToken = await getCliAccessToken();
+  if (cliToken) {
+    return cliToken;
+  }
+
+  return getAdcAccessToken();
 }
 
 function fromFirestoreValue(value: FirestoreValue | undefined): unknown {
@@ -140,7 +183,7 @@ function fromFirestoreFields(
 export type FirestoreDoc = { id: string; data: Record<string, unknown> };
 
 export async function listCollection(collectionName: string): Promise<FirestoreDoc[]> {
-  const token = await getCliAccessToken();
+  const token = await getAccessToken();
   const url = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents/${collectionName}`;
 
   const response = await fetch(url, {
