@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { NextPage } from 'next';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
 import styles from '../styles/Home.module.css';
+import scheduleStyles from '../styles/Schedule.module.css';
 import UserProfileButton from '../components/UserProfileButton';
 
 
@@ -34,56 +35,102 @@ function MonitorIcon() {
   );
 }
 
-const scheduleItems = [
-  {
-    status: 'past',
-    badge: '終了',
-    start: '08:00',
-    end: '09:15 AM',
-    subject: '現代文',
-    meta: '1限・教室 201',
-    rightLabel: '最終出席数',
-    attendance: '38 / 40名',
-    percent: 95,
-  },
-  {
-    status: 'current',
-    badge: '現在の授業',
-    start: '09:30',
-    end: '11:00 AM',
-    subject: '高度な数学',
-    meta: '2限・教室 304',
-    rightLabel: '',
-    attendance: '32 / 40',
-    percent: 80,
-  },
-  {
-    status: 'next',
-    badge: '次の授業',
-    start: '11:15',
-    end: '12:45 PM',
-    subject: '世界史',
-    meta: '3限・教室 202',
-    rightLabel: '予定出席数',
-    attendance: '- / 40名',
-    percent: 0,
-  },
-  {
-    status: 'planned',
-    badge: '予定',
-    start: '13:00',
-    end: '14:30 PM',
-    subject: '物理',
-    meta: '4限・ラボ 2',
-    rightLabel: '予定出席数',
-    attendance: '- / 40名',
-    percent: 0,
-  },
-];
+type ScheduleStatus = 'past' | 'current' | 'next' | 'planned';
+
+type ScheduleItem = {
+  scheduleId: string;
+  status: ScheduleStatus;
+  badge: string;
+  start: string;
+  end: string;
+  subject: string;
+  meta: string;
+  rightLabel: string;
+  attendance: string;
+  percent: number;
+  attended: number;
+  total: number;
+};
+
+const BADGE_LABELS: Record<ScheduleStatus, string> = {
+  past: '終了',
+  current: '現在の授業',
+  next: '次の授業',
+  planned: '予定',
+};
+
+type ApiScheduleEntry = {
+  scheduleId: string;
+  subjectName: string;
+  className: string;
+  period: number | null;
+  start: string;
+  end: string;
+  status: ScheduleStatus;
+  attended: number;
+  total: number;
+};
+
+function toScheduleItem(entry: ApiScheduleEntry): ScheduleItem {
+  const isDone = entry.status === 'past' || entry.status === 'current';
+  return {
+    scheduleId: entry.scheduleId,
+    status: entry.status,
+    badge: BADGE_LABELS[entry.status],
+    start: entry.start,
+    end: entry.end,
+    subject: entry.subjectName,
+    meta: `${entry.period ?? ''}限・${entry.className}`,
+    rightLabel: entry.status === 'past' ? '最終出席数' : entry.status === 'current' ? '' : '予定出席数',
+    attendance: isDone ? `${entry.attended} / ${entry.total}名` : `- / ${entry.total}名`,
+    percent: isDone && entry.total > 0 ? Math.round((entry.attended / entry.total) * 100) : 0,
+    attended: entry.attended,
+    total: entry.total,
+  };
+}
+
+type ClassOption = {
+  id: string;
+  name: string;
+};
 
 const Home: NextPage = () => {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<'担当授業' | '担任クラス'>('担当授業');
+  const [scheduleItems, setScheduleItems] = useState<ScheduleItem[]>([]);
+  const [classes, setClasses] = useState<ClassOption[]>([]);
+  const [selectedClassId, setSelectedClassId] = useState('class-2A');
+  const currentRowRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    fetch('/api/timetable/classes')
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.error) return;
+        setClasses(data.classes);
+      })
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    fetch(`/api/dashboard/today?classId=${encodeURIComponent(selectedClassId)}`)
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.error) return;
+        setScheduleItems((data.schedule as ApiScheduleEntry[]).map(toScheduleItem));
+      })
+      .catch(() => {});
+  }, [selectedClassId]);
+
+  const highlightedScheduleId =
+    scheduleItems.find((item) => item.status === 'current')?.scheduleId ??
+    scheduleItems.find((item) => item.status === 'next')?.scheduleId ??
+    null;
+
+  useEffect(() => {
+    if (!highlightedScheduleId) return;
+    currentRowRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }, [highlightedScheduleId]);
 
   const handleTab = (tab: '担当授業' | '担任クラス') => {
     setActiveTab(tab);
@@ -113,7 +160,19 @@ const Home: NextPage = () => {
         </div>
       </div>
 
-      <div className={styles.monitorRow}>
+      <div className={styles.monitorRow} style={{ justifyContent: 'space-between' }}>
+        <div className={scheduleStyles.filterLeft}>
+          <span className={scheduleStyles.filterLabel}>クラス:</span>
+          {classes.map((cls) => (
+            <button
+              key={cls.id}
+              className={`${scheduleStyles.termBtn} ${selectedClassId === cls.id ? scheduleStyles.termActive : ''}`}
+              onClick={() => setSelectedClassId(cls.id)}
+            >
+              {cls.name.replace(/^\d{4}-/, '')}
+            </button>
+          ))}
+        </div>
         <Link href="/monitor" className={styles.monitorBtn}>
           <MonitorIcon />
           モニター投影画面を開く
@@ -128,7 +187,8 @@ const Home: NextPage = () => {
       <div className={styles.scheduleList}>
         {scheduleItems.map((item) => (
           <div
-            key={item.subject}
+            key={item.scheduleId}
+            ref={item.scheduleId === highlightedScheduleId ? currentRowRef : undefined}
             className={`${styles.scheduleRow} ${styles[`row_${item.status}`]}`}
           >
             <div className={styles.rowLeft}>
@@ -151,15 +211,15 @@ const Home: NextPage = () => {
               {item.status === 'current' ? (
                 <>
                   <div className={styles.seatGrid}>
-                    {Array.from({ length: 40 }, (_, i) => (
-                      <span key={i} className={`${styles.seat} ${i < 32 ? styles.seatOn : styles.seatOff}`} />
+                    {Array.from({ length: item.total }, (_, i) => (
+                      <span key={i} className={`${styles.seat} ${i < item.attended ? styles.seatOn : styles.seatOff}`} />
                     ))}
                   </div>
                   <div className={styles.attendRow}>
-                    <span className={styles.attendVal}>32 / 40名</span>
-                    <span className={styles.percentBadge}>80%以上</span>
+                    <span className={styles.attendVal}>{item.attended} / {item.total}名</span>
+                    <span className={styles.percentBadge}>{item.percent}%以上</span>
                   </div>
-                  <div className={styles.bar}><div className={styles.barFill} style={{ width: '80%', background: '#dc2626' }} /></div>
+                  <div className={styles.bar}><div className={styles.barFill} style={{ width: `${item.percent}%`, background: '#dc2626' }} /></div>
                   <Link href="/attendance" className={styles.detailBtn}>詳細を見る</Link>
                 </>
               ) : (

@@ -1,5 +1,5 @@
 import type { NextPage } from 'next';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import UserProfileButton from '../components/UserProfileButton';
 import styles from '../styles/Attendance.module.css';
 
@@ -46,21 +46,23 @@ function PaperclipIcon() {
   );
 }
 
-const students = [
-  { id: '21M001', name: '佐藤 優',   initials: 'SY', color: '#3b82f6', status: '出席' as const, time: '08:45:12', comment: 'よろしくお願いします。' },
-  { id: '21M002', name: '田中 太郎', initials: 'TT', color: '#7c3aed', status: '出席' as const, time: '08:48:30', comment: null },
-  { id: '21M015', name: '小林 さくら', initials: 'KS', color: '#ec4899', status: '遅刻' as const, time: '09:05:22', comment: '電車遅延のため遅れました。' },
-  { id: '21M022', name: '伊藤 結衣', initials: 'YI', color: '#10b981', status: '欠席' as const, time: '--:--:--', comment: '体調不良のためお休みします。' },
-  { id: '21M031', name: '渡辺 健太', initials: 'WK', color: '#f59e0b', status: '出席' as const, time: '08:55:01', comment: null },
-];
+type Status = '出席' | '欠席' | '遅刻' | '公欠' | '早退' | '中抜け';
 
-type Status = '出席' | '欠席' | '遅刻';
+const AVATAR_COLORS = ['#3b82f6', '#7c3aed', '#ec4899', '#10b981', '#f59e0b', '#0ea5e9'];
+
+function initialsFromName(name: string): string {
+  const parts = name.split(/\s+/).filter(Boolean);
+  return parts.map((p) => p[0]).join('').slice(0, 2).toUpperCase();
+}
 
 function StatusChip({ status }: { status: Status }) {
   const map: Record<Status, { bg: string; color: string }> = {
-    '出席': { bg: '#fee2e2', color: '#dc2626' },
+    '出席': { bg: '#dcfce7', color: '#16a34a' },
     '遅刻': { bg: '#dbeafe', color: '#1d4ed8' },
     '欠席': { bg: '#fee2e2', color: '#dc2626' },
+    '公欠': { bg: '#f3f4f6', color: '#374151' },
+    '早退': { bg: '#fef3c7', color: '#d97706' },
+    '中抜け': { bg: '#fef3c7', color: '#d97706' },
   };
   const s = map[status];
   return (
@@ -71,11 +73,48 @@ function StatusChip({ status }: { status: Status }) {
   );
 }
 
+type AttendanceStats = {
+  attendanceRate: number;
+  present: number;
+  absent: number;
+  late: number;
+  excused: number;
+};
+
+type RealtimeStudent = {
+  recordId: string;
+  id: string;
+  name: string;
+  status: Status;
+  time: string;
+  comment: string | null;
+};
+
 const AttendancePage: NextPage = () => {
   const [question, setQuestion] = useState('');
+  const [stats, setStats] = useState<AttendanceStats | null>(null);
+  const [students, setStudents] = useState<RealtimeStudent[]>([]);
+
+  useEffect(() => {
+    fetch('/api/attendance/stats?classId=class-2A')
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.error) return;
+        setStats(data);
+      })
+      .catch(() => {});
+
+    fetch('/api/attendance/realtime?classId=class-2A')
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.error) return;
+        setStudents(data.students);
+      })
+      .catch(() => {});
+  }, []);
 
   // circle gauge
-  const pct = 85;
+  const pct = stats?.attendanceRate ?? 0;
   const r = 46;
   const circ = 2 * Math.PI * r;
   const offset = circ - (pct / 100) * circ;
@@ -111,10 +150,10 @@ const AttendancePage: NextPage = () => {
           </div>
           <div className={styles.statsGrid}>
             {[
-              { label: '出席', value: '34', color: '#111827' },
-              { label: '欠席', value: '4', color: '#dc2626' },
-              { label: '遅刻', value: '2', color: '#3b82f6' },
-              { label: '公欠', value: '0', color: '#111827' },
+              { label: '出席', value: String(stats?.present ?? 0), color: '#111827' },
+              { label: '欠席', value: String(stats?.absent ?? 0), color: '#dc2626' },
+              { label: '遅刻', value: String(stats?.late ?? 0), color: '#3b82f6' },
+              { label: '公欠', value: String(stats?.excused ?? 0), color: '#111827' },
             ].map((s) => (
               <div key={s.label} className={styles.statCard}>
                 <span className={styles.statLabel}>{s.label}</span>
@@ -177,12 +216,14 @@ const AttendancePage: NextPage = () => {
             </tr>
           </thead>
           <tbody>
-            {students.map((s) => (
-              <tr key={s.id} className={styles.tr}>
+            {students.map((s, i) => (
+              <tr key={s.recordId} className={styles.tr}>
                 <td className={styles.td}><span className={styles.idText}>{s.id}</span></td>
                 <td className={styles.td}>
                   <div className={styles.nameCell}>
-                    <div className={styles.avatar} style={{ background: s.color }}>{s.initials}</div>
+                    <div className={styles.avatar} style={{ background: AVATAR_COLORS[i % AVATAR_COLORS.length] }}>
+                      {initialsFromName(s.name)}
+                    </div>
                     <span className={styles.studentName}>{s.name}</span>
                   </div>
                 </td>

@@ -1,6 +1,6 @@
 import type { NextPage } from 'next';
 import Link from 'next/link';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import styles from '../styles/Schedule.module.css';
 import UserProfileButton from '../components/UserProfileButton';
 
@@ -51,15 +51,26 @@ function StudentsIcon() {
   );
 }
 
-const classes = [
-  { id: '1A', shortId: '1A', name: '1年A組', dept: '情報システム', students: 32, deptColor: '#3b82f6' },
-  { id: '1B', shortId: '1B', name: '1年B組', dept: '情報システム', students: 30, deptColor: '#3b82f6' },
-  { id: '2A', shortId: '2A', name: '2年A組', dept: 'デザイン', students: 28, deptColor: '#ec4899' },
-  { id: '2B', shortId: '2B', name: '2年B組', dept: 'デザイン', students: 25, deptColor: '#ec4899' },
-];
+type ClassCard = {
+  id: string;
+  name: string;
+  gradeYear: number | null;
+  studentCount: number;
+};
 
 const Schedule: NextPage = () => {
   const [term, setTerm] = useState<'前期' | '後期'>('前期');
+  const [classes, setClasses] = useState<ClassCard[]>([]);
+
+  useEffect(() => {
+    fetch('/api/timetable/classes')
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.error) return;
+        setClasses(data.classes);
+      })
+      .catch(() => {});
+  }, []);
 
   return (
     <div className={styles.page}>
@@ -110,17 +121,17 @@ const Schedule: NextPage = () => {
         {classes.map((cls) => (
           <div key={cls.id} className={styles.classCard}>
             <div className={styles.cardTop}>
-              <div className={styles.classIdBadge}>{cls.shortId}</div>
-              <span className={styles.deptBadge} style={{ color: cls.deptColor, background: cls.deptColor + '18' }}>
-                {cls.dept}
+              <div className={styles.classIdBadge}>{cls.id.replace('class-', '')}</div>
+              <span className={styles.deptBadge} style={{ color: '#3b82f6', background: '#3b82f618' }}>
+                {cls.gradeYear ? `${cls.gradeYear}年` : ''}
               </span>
             </div>
             <div className={styles.className}>{cls.name}</div>
             <div className={styles.studentCount}>
               <StudentsIcon />
-              <span>{cls.students}名</span>
+              <span>{cls.studentCount}名</span>
             </div>
-            <Link href="/schedule-detail" className={styles.detailBtn}>
+            <Link href={`/schedule-detail?classId=${encodeURIComponent(cls.id)}`} className={styles.detailBtn}>
               詳細を見る →
             </Link>
           </div>

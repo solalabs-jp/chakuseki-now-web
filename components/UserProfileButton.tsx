@@ -112,7 +112,7 @@ export default function UserProfileButton() {
             onClick={() => router.push('/login')}
             aria-label="ログインへ移動"
           >
-            ログイン
+            <UserCircleIcon />
           </button>
         )
       ) : null}

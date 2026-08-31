@@ -1,5 +1,7 @@
 import type { NextPage } from 'next';
 import Link from 'next/link';
+import { useEffect, useState } from 'react';
+import { useRouter } from 'next/router';
 import styles from '../styles/ScheduleDetail.module.css';
 import UserProfileButton from '../components/UserProfileButton';
 
@@ -76,34 +78,71 @@ type ClassCell = {
   icon: 'sync' | 'edit';
 } | null;
 
-// Weekly timetable data: [mon, tue, wed, thu, fri] per row
-const timetable: ClassCell[][] = [
-  [
-    { period: '1限（9:00-10:30）', subject: 'プログラミング演習II', teacher: '山田 太郎', room: '第3PCルーム', icon: 'sync' },
-    null,
-    null,
-    { period: '1限（9:00-10:30）', subject: 'ネットワーク技術', teacher: '鈴木 一郎', room: '第2PCルーム', icon: 'sync' },
-    null,
-  ],
-  [
-    null,
-    { period: '2限（10:40-12:10）', subject: 'データベース概論', teacher: '佐藤 花子', room: '大講義室A', icon: 'edit' },
-    null,
-    null,
-    { period: '2限（10:40-12:10）', subject: 'キャリアデザイン', teacher: '田中 義夫', room: '講義室101', icon: 'edit' },
-  ],
-];
+type ApiSchedule = {
+  scheduleId: string;
+  subject: string;
+  teacher: string;
+  dayOfWeek: number;
+  period: number;
+  periodLabel: string;
+};
 
 const days = ['月', '火', '水', '木', '金'];
 
 const ScheduleDetailPage: NextPage = () => {
+  const router = useRouter();
+  const classId = typeof router.query.classId === 'string' ? router.query.classId : 'class-2A';
+
+  const [className, setClassName] = useState('');
+  const [timetable, setTimetable] = useState<ClassCell[][]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetch(`/api/timetable/detail?classId=${encodeURIComponent(classId)}`)
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.error) {
+          setError(data.error);
+          return;
+        }
+        setClassName(data.className);
+
+        const schedules: ApiSchedule[] = data.schedules;
+        const maxPeriod = Math.max(1, ...schedules.map((s) => s.period));
+
+        const grid: ClassCell[][] = Array.from({ length: maxPeriod }, () =>
+          Array.from({ length: days.length }, () => null)
+        );
+
+        for (const s of schedules) {
+          const rowIdx = s.period - 1;
+          const colIdx = s.dayOfWeek - 1; // dayOfWeek: 1=月...5=金
+          if (rowIdx < 0 || rowIdx >= maxPeriod || colIdx < 0 || colIdx >= days.length) continue;
+          grid[rowIdx][colIdx] = {
+            period: s.periodLabel,
+            subject: s.subject,
+            teacher: s.teacher,
+            room: '',
+            icon: 'sync',
+          };
+        }
+
+        setTimetable(grid);
+      })
+      .catch((err) => setError(String(err)))
+      .finally(() => setLoading(false));
+  }, [classId]);
+
   return (
     <div className={styles.page}>
       {/* Header */}
       <div className={styles.pageHeader}>
         <div>
           <h1 className={styles.title}>時間割登録</h1>
-          <p className={styles.subtitle}>2024年度 前期 / 情報システム学科 2年A組</p>
+          <p className={styles.subtitle}>
+            {loading ? '読み込み中...' : error ? `データ取得エラー: ${error}` : className}
+          </p>
         </div>
         <div className={styles.headerRight}>
           <Link href="/schedule-upload" className={styles.outlineBtn}>
@@ -142,10 +181,12 @@ const ScheduleDetailPage: NextPage = () => {
                       <PersonIcon />
                       <span>{cell.teacher}</span>
                     </div>
-                    <div className={styles.cardMeta}>
-                      <LocationIcon />
-                      <span>{cell.room}</span>
-                    </div>
+                    {cell.room && (
+                      <div className={styles.cardMeta}>
+                        <LocationIcon />
+                        <span>{cell.room}</span>
+                      </div>
+                    )}
                   </div>
                 ) : (
                   <button className={styles.emptyCell2}>
