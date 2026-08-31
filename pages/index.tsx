@@ -3,6 +3,8 @@ import type { NextPage } from 'next';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
 import styles from '../styles/Home.module.css';
+import UserProfileButton from '../components/UserProfileButton';
+
 
 function BellIcon() {
   return (
@@ -107,7 +109,7 @@ const Home: NextPage = () => {
             >担任クラス</button>
           </div>
           <button className={styles.iconBtn}><BellIcon /></button>
-          <button className={styles.iconBtn}><UserCircleIcon /></button>
+          <UserProfileButton />
         </div>
       </div>
 

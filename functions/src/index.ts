@@ -1,6 +1,13 @@
 import {setGlobalOptions} from "firebase-functions";
 import {onRequest} from "firebase-functions/https";
 import * as logger from "firebase-functions/logger";
+import * as admin from "firebase-admin";
+import {FieldValue} from "firebase-admin/firestore";
+import * as https from "https";
+import * as http from "http";
+
+admin.initializeApp();
+const db = admin.firestore();
 
 setGlobalOptions({maxInstances: 10});
 
@@ -38,8 +45,24 @@ type TeacherScheduleTeacherRequestBody = {
   scheduleId?: unknown;
 };
 
+type LoginRequestBody = {
+  email?: unknown;
+  password?: unknown;
+};
+
+type RegisterRequestBody = {
+  email?: unknown;
+  password?: unknown;
+  role?: unknown;
+  classId?: unknown;
+};
+
 type FunctionRequest = Parameters<Parameters<typeof onRequest>[0]>[0];
 type FunctionResponse = Parameters<Parameters<typeof onRequest>[0]>[1];
+
+// Firebase Web API Key
+// (FIREBASE_ prefix is reserved; use API_KEY instead)
+const FIREBASE_API_KEY = process.env.API_KEY ?? "";
 
 const DUMMY_STUDENT_SESSION = "dummy-session-student-001";
 const DUMMY_TEACHER_SESSION = "dummy-session-teacher-001";
@@ -81,36 +104,6 @@ const attendanceSummaryData = [
   },
 ];
 
-const timetableData = [
-  {
-    day: "Monday",
-    class: [
-      {
-        period: "1",
-        subjectName: "ITマネジメント",
-        teacherName: "Kota Nemoto",
-        location: "101",
-      },
-      {
-        period: "2",
-        subjectName: "Webアプリ開発",
-        teacherName: "Ayaka Sato",
-        location: "204",
-      },
-    ],
-  },
-  {
-    day: "Tuesday",
-    class: [
-      {
-        period: "1",
-        subjectName: "データベース",
-        teacherName: "Kota Nemoto",
-        location: "302",
-      },
-    ],
-  },
-];
 
 const attendanceBookData = [
   {
@@ -141,6 +134,290 @@ const attendanceBookData = [
     period: 2,
   },
 ];
+
+// ─── Auth: Login ────────────────────────────────────────────────────────────
+
+/**
+ * POST /api/auth/login
+ * Body: { email: string, password: string }
+ * Response: { idToken, uid, role, userId }
+ *
+ * Firebase Identity Toolkit REST API でサインインし、
+ * Firestore の users コレクションからロール情報を付加して返す。
+ */
+
+
+export const loginWithEmailPassword = onRequest(async (request, response) => {
+  setCorsHeaders(response);
+
+  if (request.method === "OPTIONS") {
+    response.status(204).send("");
+    return;
+  }
+
+  if (request.method === "GET") {
+    response.status(200).json({
+      message: "POST email and password to login.",
+      method: "POST",
+      path: "/api/auth/login",
+      body: {
+        email: "teacher001@example.com",
+        password: "password123",
+      },
+    });
+    return;
+  }
+
+  if (request.method !== "POST") {
+    response.set("Allow", "GET, POST, OPTIONS");
+    sendStatus(response, 405);
+    return;
+  }
+
+  const body = (request.body ?? {}) as LoginRequestBody;
+
+  if (!isNonEmptyString(body.email) || !isNonEmptyString(body.password)) {
+    response.status(400).json({error: "email and password are required."});
+    return;
+  }
+
+  if (!FIREBASE_API_KEY) {
+    logger.error("FIREBASE_API_KEY is not set");
+    response.status(500).json({error: "Server configuration error."});
+    return;
+  }
+
+  try {
+    // 1. Firebase Identity Toolkit で Email/Password サインイン
+    const signInResult = await callIdentityToolkit({
+      email: body.email,
+      password: body.password,
+      returnSecureToken: true,
+    });
+
+    // エラーレスポンスの確認
+    const errorObj = signInResult.error as { message?: string } | undefined;
+    if (errorObj) {
+      const code = errorObj.message ?? "UNKNOWN";
+      logger.warn("Login failed", {
+        code,
+        email: body.email,
+      });
+
+      if (
+        code === "EMAIL_NOT_FOUND" ||
+        code === "INVALID_PASSWORD" ||
+        code === "INVALID_LOGIN_CREDENTIALS"
+      ) {
+        response.status(401).json({error: "Invalid email or password."});
+      } else {
+        response.status(400).json({error: code});
+      }
+      return;
+    }
+
+    const idToken = signInResult.idToken as string;
+    const uid = signInResult.localId as string;
+
+    // 2. Firestore の users コレクションから uid でロールを取得
+    //    uid が Firestore の doc ID と一致しない場合は email で検索
+    let role: string | null = null;
+    let userId: string | null = null;
+    let displayName: string | null = null;
+    let grade: string | null = null;
+    let className: string | null = null;
+    let email: string | null = null;
+
+    // まず uid で直接引く
+    const directDoc = await db.collection("users").doc(uid).get();
+    if (directDoc.exists) {
+      role = directDoc.data()?.role ?? null;
+      userId = uid;
+      displayName = directDoc.data()?.displayName ?? null;
+      grade = directDoc.data()?.grade ?? null;
+      className = directDoc.data()?.className ?? null;
+      email = directDoc.data()?.email ?? null;
+    }
+
+    logger.info("Login successful", {uid, role, structuredData: true});
+
+    response.status(200).json({
+      idToken,
+      uid,
+      userId,
+      role,
+      displayName,
+      grade,
+      className,
+      email,
+      expiresIn: signInResult.expiresIn as string,
+    });
+  } catch (err: unknown) {
+    const errObj = err as Record<string, unknown>;
+    logger.error("authLogin error", {error: errObj});
+    response.status(500).json({error: "Internal server error."});
+  }
+});
+
+/**
+ * Firebase Identity Toolkit REST API (signInWithPassword) を呼ぶヘルパー
+ * エミュレータ環境では FIREBASE_AUTH_EMULATOR_HOST を参照して http で叩く
+ * @param {object} payload - サインインリクエストのペイロード
+ * @return {Promise<Record<string, unknown>>} Identity Toolkit のレスポンス
+ */
+function callIdentityToolkit(payload: {
+  email: string;
+  password: string;
+  returnSecureToken: boolean;
+}): Promise<Record<string, unknown>> {
+  return new Promise((resolve, reject) => {
+    const body = JSON.stringify(payload);
+    const emulatorHost = process.env.FIREBASE_AUTH_EMULATOR_HOST;
+
+    let requester: typeof https | typeof http;
+    let options: http.RequestOptions;
+
+    if (emulatorHost) {
+      // エミュレータ: http でローカルホストを叩く
+      const [hostname, portStr] = emulatorHost.split(":");
+      requester = http;
+      const requestPath =
+        "/identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=" +
+        "fake-api-key";
+      options = {
+        hostname,
+        port: portStr ? parseInt(portStr, 10) : 9099,
+        path: requestPath,
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Content-Length": Buffer.byteLength(body),
+        },
+      };
+    } else {
+      // 本番: https で Identity Toolkit を叩く
+      requester = https;
+      const requestPath =
+        "/v1/accounts:signInWithPassword?key=" +
+        FIREBASE_API_KEY;
+      options = {
+        hostname: "identitytoolkit.googleapis.com",
+        path: requestPath,
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Content-Length": Buffer.byteLength(body),
+        },
+      };
+    }
+
+    const req = requester.request(options, (res) => {
+      let data = "";
+      res.on("data", (chunk) => (data += chunk));
+      res.on("end", () => {
+        try {
+          resolve(JSON.parse(data));
+        } catch {
+          reject(new Error("Failed to parse Identity Toolkit response"));
+        }
+      });
+    });
+    req.on("error", reject);
+    req.write(body);
+    req.end();
+  });
+}
+
+/**
+ * POST /api/auth/register
+ * Body: { email: string, password: string, role: string, classId?: string }
+ * Response: { uid, message }
+ *
+ * Firebase Admin SDK を用いてユーザーを作成し、
+ * Firestore の users コレクションにロール情報を保存する。
+ */
+export const registerUser = onRequest(async (request, response) => {
+  setCorsHeaders(response);
+
+  if (request.method === "OPTIONS") {
+    response.status(204).send("");
+    return;
+  }
+
+  if (request.method === "GET") {
+    response.status(200).json({
+      message: "POST email, password, and role to register.",
+      method: "POST",
+      path: "/api/auth/register",
+      body: {
+        email: "newuser@example.com",
+        password: "password123  ",
+        role: "student",
+        classId: "class-2A",
+      },
+    });
+    return;
+  }
+
+  if (request.method !== "POST") {
+    response.set("Allow", "GET, POST, OPTIONS");
+    sendStatus(response, 405);
+    return;
+  }
+
+  const body = (request.body ?? {}) as RegisterRequestBody;
+
+  if (
+    !isNonEmptyString(body.email) ||
+    !isNonEmptyString(body.password) ||
+    !isNonEmptyString(body.role)
+  ) {
+    response.status(400).json({
+      error: "email, password, and role are required.",
+    });
+    return;
+  }
+
+  try {
+    // 1. Firebase Auth にユーザーを作成
+    const userRecord = await admin.auth().createUser({
+      email: body.email,
+      password: body.password,
+    });
+
+    // 2. Firestore の users コレクションに権限などを保存
+    const userData: Record<string, unknown> = {
+      role: body.role,
+      createdAt: FieldValue.serverTimestamp(),
+    };
+    if (isNonEmptyString(body.classId)) {
+      userData.classId = body.classId;
+    }
+
+    await db.collection("users").doc(userRecord.uid).set(userData);
+
+    logger.info("User registered successfully", {
+      uid: userRecord.uid,
+      role: body.role,
+      structuredData: true,
+    });
+
+    response.status(201).json({
+      uid: userRecord.uid,
+      message: "User registered successfully.",
+    });
+  } catch (err: unknown) {
+    const errObj = err as Record<string, unknown>;
+    logger.error("Error registering user", {error: errObj});
+    if (String(errObj?.code) === "auth/email-already-exists") {
+      response.status(409).json({error: "Email already exists."});
+    } else {
+      response.status(500).json({error: "Internal server error."});
+    }
+  }
+});
+
+// ─── Student endpoints ───────────────────────────────────────────────────────
 
 export const studentBeacon = onRequest((request, response) => {
   setCorsHeaders(response);
@@ -316,11 +593,21 @@ export const studentAttendanceSummary = onRequest((request, response) => {
   response.status(200).json(attendanceSummaryData);
 });
 
-export const studentTimetable = onRequest((request, response) => {
+export const studentTimetable = onRequest(async (request, response) => {
   setCorsHeaders(response);
 
   if (request.method === "OPTIONS") {
     response.status(204).send("");
+    return;
+  }
+
+  if (request.method === "GET" && !request.headers.authorization) {
+    response.status(200).json({
+      message:
+        "Add Authorization header (Bearer token) to get timetable.",
+      method: "GET",
+      path: "/api/student/timetable",
+    });
     return;
   }
 
@@ -330,26 +617,54 @@ export const studentTimetable = onRequest((request, response) => {
     return;
   }
 
-  const session = getSession(request);
-
-  if (!isNonEmptyString(session)) {
-    response.status(200).json({
-      message: "Add session query to get timetable.",
-      method: "GET",
-      path: "/api/student/timetable",
-      query: {
-        session: DUMMY_STUDENT_SESSION,
-      },
+  const uid = await verifyToken(request);
+  if (!uid) {
+    response.status(401).json({
+      error: "Unauthorized. Invalid or missing token.",
     });
     return;
   }
 
-  if (session !== DUMMY_STUDENT_SESSION) {
-    sendStatus(response, 401);
-    return;
-  }
+  try {
+    const userDoc = await db.collection("users").doc(uid).get();
+    if (!userDoc.exists) {
+      response.status(404).json({error: "User not found."});
+      return;
+    }
 
-  response.status(200).json(timetableData);
+    const userData = userDoc.data();
+    const classId = userData?.classId;
+
+    if (!classId) {
+      response.status(404).json({error: "User does not belong to any class."});
+      return;
+    }
+
+    const timetablesRef = db
+      .collection("timetables")
+      .where("classId", "==", classId);
+    const timetablesSnapshot = await timetablesRef.get();
+
+    if (timetablesSnapshot.empty) {
+      response.status(200).json([]);
+      return;
+    }
+
+    const timetables = timetablesSnapshot.docs.map((doc) => {
+      const data = doc.data();
+      return {
+        subjectName: data.subjectName,
+        period: data.period,
+        dayOfWeek: data.dayOfWeek,
+      };
+    });
+
+    response.status(200).json(timetables);
+  } catch (err) {
+    const errObj = err as Record<string, unknown>;
+    logger.error("Error fetching timetable", {error: errObj});
+    response.status(500).json({error: "Internal server error."});
+  }
 });
 
 export const teacherAttendanceRecord = onRequest((request, response) => {
@@ -583,5 +898,29 @@ const isLocation = (value: unknown): boolean => {
   const latitude = location.latitude ?? location.lat;
   const longitude = location.longitude ?? location.lng;
 
-  return typeof latitude === "number" && typeof longitude === "number";
+  return (
+    typeof latitude === "number" &&
+    typeof longitude === "number"
+  );
+};
+
+const verifyToken = async (
+  request: FunctionRequest
+): Promise<string | null> => {
+  const authHeader = request.headers.authorization;
+  if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    return null;
+  }
+  const idToken = authHeader.split("Bearer ")[1];
+  try {
+    const decodedToken = await admin.auth().verifyIdToken(idToken);
+    return decodedToken.uid;
+  } catch (err) {
+    const errObj = err as Record<string, unknown>;
+    logger.warn(
+      "Token verification failed",
+      {error: errObj}
+    );
+    return null;
+  }
 };

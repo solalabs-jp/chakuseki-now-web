@@ -334,3 +334,91 @@
   color: #d1d5db;
   font-style: italic;
 }
+
+.userPanelOverlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(17, 24, 39, 0.28);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  z-index: 1000;
+}
+
+.userPanel {
+  width: min(100%, 380px);
+  background: #fff;
+  border-radius: 18px;
+  box-shadow: 0 20px 60px rgba(15, 23, 42, 0.2);
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.userPanelHeader {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.userAvatarLarge {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #dc2626, #f97316);
+  color: #fff;
+  display: grid;
+  place-items: center;
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.userPanelName {
+  font-size: 16px;
+  font-weight: 700;
+  color: #111827;
+}
+
+.userPanelRole {
+  font-size: 12px;
+  color: #6b7280;
+  margin-top: 2px;
+}
+
+.userPanelBody {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.userInfoRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 0;
+  border-bottom: 1px solid #f3f4f6;
+  font-size: 13px;
+  color: #374151;
+}
+
+.userInfoRow:last-child {
+  border-bottom: none;
+}
+
+.userInfoRow strong {
+  color: #111827;
+  text-align: right;
+}
+
+.userPanelButton {
+  border: none;
+  border-radius: 10px;
+  background: #dc2626;
+  color: #fff;
+  padding: 10px 14px;
+  font-weight: 600;
+  cursor: pointer;
+}

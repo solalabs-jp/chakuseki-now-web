@@ -2,6 +2,8 @@ import type { NextPage } from 'next';
 import Link from 'next/link';
 import { useState } from 'react';
 import styles from '../styles/Schedule.module.css';
+import UserProfileButton from '../components/UserProfileButton';
+
 
 function BellIcon() {
   return (
@@ -78,7 +80,7 @@ const Schedule: NextPage = () => {
             <option>デザイン</option>
           </select>
           <button className={styles.iconBtn}><BellIcon /></button>
-          <button className={styles.iconBtn}><UserCircleIcon /></button>
+          <UserProfileButton />
         </div>
       </div>
 

@@ -18,10 +18,95 @@
         "*.local"
       ],
       "predeploy": [
-        "npm --prefix \"$RESOURCE_DIR\" run build"
+        "npm --prefix functions run lint",
+        "npm --prefix functions run build"
       ]
     }
   ],
+  "hosting": {
+    "public": "public",
+    "ignore": [
+      "firebase.json",
+      "**/.*",
+      "**/node_modules/**"
+    ],
+    "rewrites": [
+      {
+        "source": "/api/student/beacon",
+        "function": {
+          "functionId": "studentBeacon",
+          "region": "us-central1"
+        }
+      },
+      {
+        "source": "/api/student/answer",
+        "function": {
+          "functionId": "studentAnswer",
+          "region": "us-central1"
+        }
+      },
+      {
+        "source": "/api/student/attendance-calendar",
+        "function": {
+          "functionId": "studentAttendanceCalendar",
+          "region": "us-central1"
+        }
+      },
+      {
+        "source": "/api/student/attendance-summary",
+        "function": {
+          "functionId": "studentAttendanceSummary",
+          "region": "us-central1"
+        }
+      },
+      {
+        "source": "/api/student/timetable",
+        "function": {
+          "functionId": "studentTimetable",
+          "region": "us-central1"
+        }
+      },
+      {
+        "source": "/api/teacher/attendance-record",
+        "function": {
+          "functionId": "teacherAttendanceRecord",
+          "region": "us-central1"
+        }
+      },
+      {
+        "source": "/api/teacher/question",
+        "function": {
+          "functionId": "teacherQuestion",
+          "region": "us-central1"
+        }
+      },
+      {
+        "source": "/api/teacher/schedule-teacher",
+        "function": {
+          "functionId": "teacherScheduleTeacher",
+          "region": "us-central1"
+        }
+      },
+      {
+        "source": "/api/teacher/attendance-book",
+        "function": {
+          "functionId": "teacherAttendanceBook",
+          "region": "us-central1"
+        }
+      },
+      {
+        "source": "/api/auth/login",
+        "function": {
+          "functionId": "loginWithEmailPassword",
+          "region": "us-central1"
+        }
+      },
+      {
+        "source": "**",
+        "destination": "/index.html"
+      }
+    ]
+  },
   "emulators": {
     "auth": {
       "port": 9099
@@ -52,6 +137,8 @@
     "rootDir": "/"
   },
   "auth": {
-    "providers": {}
+    "providers": {
+      "emailPassword": true
+    }
   }
 }

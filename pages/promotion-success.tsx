@@ -1,6 +1,8 @@
 import type { NextPage } from 'next';
 import { useRouter } from 'next/router';
 import styles from '../styles/PromotionSuccess.module.css';
+import UserProfileButton from '../components/UserProfileButton';
+
 
 function BellIcon() {
   return (
@@ -70,7 +72,7 @@ const PromotionSuccessPage: NextPage = () => {
         </div>
         <div className={styles.headerRight}>
           <button className={styles.iconBtn}><BellIcon /></button>
-          <button className={styles.iconBtn}><UserCircleIcon /></button>
+          <UserProfileButton />
         </div>
       </div>
 

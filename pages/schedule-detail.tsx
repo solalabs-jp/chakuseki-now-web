@@ -1,6 +1,8 @@
 import type { NextPage } from 'next';
 import Link from 'next/link';
 import styles from '../styles/ScheduleDetail.module.css';
+import UserProfileButton from '../components/UserProfileButton';
+
 
 function BellIcon() {
   return (
@@ -109,7 +111,7 @@ const ScheduleDetailPage: NextPage = () => {
           </Link>
           <button className={styles.primaryBtn}>+ 新規授業追加</button>
           <button className={styles.iconBtn}><BellIcon /></button>
-          <button className={styles.iconBtn}><UserCircleIcon /></button>
+          <UserProfileButton />
         </div>
       </div>
 

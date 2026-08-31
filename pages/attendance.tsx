@@ -1,6 +1,7 @@
 import type { NextPage } from 'next';
-import styles from '../styles/Attendance.module.css';
 import { useState } from 'react';
+import UserProfileButton from '../components/UserProfileButton';
+import styles from '../styles/Attendance.module.css';
 
 function BellIcon() {
   return (
@@ -88,7 +89,7 @@ const AttendancePage: NextPage = () => {
         </div>
         <div className={styles.headerRight}>
           <button className={styles.iconBtn}><BellIcon /></button>
-          <button className={styles.iconBtn}><UserCircleIcon /></button>
+          <UserProfileButton />
         </div>
       </div>
 
