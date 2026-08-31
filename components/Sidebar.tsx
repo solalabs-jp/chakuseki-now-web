@@ -131,9 +131,9 @@ export default function Sidebar() {
       </nav>
 
       <div className={styles.userCard}>
-        <div className={styles.userAvatar}>小</div>
+        <div className={styles.userAvatar}>佐</div>
         <div className={styles.userText}>
-          <span className={styles.userName}>小山 小山</span>
+          <span className={styles.userName}>佐藤先生</span>
           <span className={styles.userSub}>Homeroom 2A</span>
         </div>
         <UserProfileButton />
