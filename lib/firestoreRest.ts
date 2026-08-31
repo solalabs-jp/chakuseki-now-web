@@ -1,6 +1,7 @@
 import fs from "fs";
 import os from "os";
 import path from "path";
+import { UserRefreshClient } from "google-auth-library";
 
 const PROJECT_ID =
   process.env.FIREBASE_PROJECT_ID ??
@@ -9,19 +10,102 @@ const PROJECT_ID =
 
 type FirestoreValue = Record<string, unknown>;
 
-function getCliAccessToken(): string {
+// Public OAuth client shipped with firebase-tools (not a secret; identical for
+// every install). Used to exchange the stored refresh_token for a fresh
+// access_token so requests don't fail once the cached token expires.
+const FIREBASE_CLI_CLIENT_ID =
+  "563584335869-fgrhgmd47bqnekij5i8b5pr03ho849e6.apps.googleusercontent.com";
+const FIREBASE_CLI_CLIENT_SECRET = "j9iVZfS8kkCEFUPaAeJV0sAi";
+
+type CliTokens = {
+  access_token?: string;
+  refresh_token?: string;
+  expires_at?: number;
+};
+
+type CliConfig = {
+  user?: { email?: string };
+  tokens?: CliTokens;
+  activeAccounts?: Record<string, string>;
+  additionalAccounts?: Array<{ user?: { email?: string }; tokens?: CliTokens }>;
+};
+
+let cachedToken: { value: string; expiresAt: number } | null = null;
+
+function readCliConfig(): CliConfig {
   const configFile = path.join(
     os.homedir(),
     ".config",
     "configstore",
     "firebase-tools.json"
   );
-  const config = JSON.parse(fs.readFileSync(configFile, "utf8"));
-  const token = config.tokens?.access_token;
-  if (!token) {
-    throw new Error("No access_token found in firebase-tools.json. Run `firebase login`.");
+  return JSON.parse(fs.readFileSync(configFile, "utf8")) as CliConfig;
+}
+
+/** Pick the tokens for the account active in this working directory. */
+function selectAccountTokens(config: CliConfig): CliTokens {
+  const activeEmail =
+    config.activeAccounts?.[process.cwd()] ?? config.user?.email;
+
+  if (activeEmail && config.user?.email === activeEmail && config.tokens) {
+    return config.tokens;
   }
-  return token;
+
+  const match = config.additionalAccounts?.find(
+    (account) => account.user?.email === activeEmail
+  );
+  if (match?.tokens) {
+    return match.tokens;
+  }
+
+  if (config.tokens) {
+    return config.tokens;
+  }
+
+  throw new Error(
+    "No Firebase CLI credentials found. Run `firebase login` (or `firebase login:use <email>`)."
+  );
+}
+
+async function getCliAccessToken(): Promise<string> {
+  if (cachedToken && cachedToken.expiresAt - Date.now() > 60_000) {
+    return cachedToken.value;
+  }
+
+  const tokens = selectAccountTokens(readCliConfig());
+
+  // Reuse the cached access_token while it is still comfortably valid.
+  if (
+    tokens.access_token &&
+    typeof tokens.expires_at === "number" &&
+    tokens.expires_at - Date.now() > 60_000
+  ) {
+    cachedToken = { value: tokens.access_token, expiresAt: tokens.expires_at };
+    return tokens.access_token;
+  }
+
+  if (!tokens.refresh_token) {
+    throw new Error(
+      "Firebase CLI access_token is expired and no refresh_token is available. Run `firebase login --reauth`."
+    );
+  }
+
+  const client = new UserRefreshClient(
+    FIREBASE_CLI_CLIENT_ID,
+    FIREBASE_CLI_CLIENT_SECRET,
+    tokens.refresh_token
+  );
+  const { credentials } = await client.refreshAccessToken();
+  const accessToken = credentials.access_token;
+  if (!accessToken) {
+    throw new Error("Failed to refresh Firebase CLI access token.");
+  }
+
+  cachedToken = {
+    value: accessToken,
+    expiresAt: credentials.expiry_date ?? Date.now() + 55 * 60_000,
+  };
+  return accessToken;
 }
 
 function fromFirestoreValue(value: FirestoreValue | undefined): unknown {
@@ -56,7 +140,7 @@ function fromFirestoreFields(
 export type FirestoreDoc = { id: string; data: Record<string, unknown> };
 
 export async function listCollection(collectionName: string): Promise<FirestoreDoc[]> {
-  const token = getCliAccessToken();
+  const token = await getCliAccessToken();
   const url = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents/${collectionName}`;
 
   const response = await fetch(url, {
