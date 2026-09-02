@@ -1,10 +1,10 @@
-import { setGlobalOptions } from "firebase-functions";
-import { onRequest } from "firebase-functions/https";
-import { onSchedule } from "firebase-functions/scheduler";
+import {setGlobalOptions} from "firebase-functions";
+import {onRequest} from "firebase-functions/https";
+import {onSchedule} from "firebase-functions/scheduler";
 
 import * as logger from "firebase-functions/logger";
 import * as admin from "firebase-admin";
-import { FieldValue, Timestamp } from "firebase-admin/firestore";
+import {FieldValue, Timestamp} from "firebase-admin/firestore";
 import * as https from "https";
 import * as http from "http";
 
@@ -435,9 +435,10 @@ export const registerUser = onRequest(async (request, response) => {
 
 /**
  * POST /api/teacher/question
- * Body: { sessionId: string, teacherId: string, questionText: string, isSkippable: boolean }
+ * Body: { sessionId: string, teacherId: string, questionText: string,
+ *         isSkippable: boolean }
  * Response: { message: string, questionId: string }
- * 
+ *
  * 毎授業の質問（チェックイン質問）を送信・保存するAPI
  * Firebase Authで先生の認証済みのセッションのみが利用できる。
  */
@@ -483,7 +484,7 @@ export const createCheckinQuestion = onRequest(async (request, response) => {
     !isNonEmptyString(body.questionText) ||
     typeof body.isSkippable !== "boolean"
   ) {
-    response.status(400).json({ error: "Invalid or missing parameters." });
+    response.status(400).json({error: "Invalid or missing parameters."});
     return;
   }
 
@@ -512,10 +513,9 @@ export const createCheckinQuestion = onRequest(async (request, response) => {
       message: "Question sent successfully.",
       questionId: questionRef.id,
     });
-
   } catch (error) {
     logger.error("Failed to save checkin question", error);
-    response.status(500).json({ error: "Internal server error." });
+    response.status(500).json({error: "Internal server error."});
   }
 });
 
@@ -869,12 +869,12 @@ export const teacherQuestion = onRequest(async (request, response) => {
     const questionRef = db.collection("CHECKIN_QUESTIONS").doc();
 
     await questionRef.set({
-      questionId: questionRef.id,            // ドキュメントIDをそのまま割り当て
-      sessionId: "dummy-session-id-001",    // 本来はリクエスト等から受け取る
-      teacherId: "dummy-teacher-id-001",    // 本来はセッション情報等から特定する
-      questionText: body.content,            // 先生が入力した質問文
-      isSkippable: false,                    // デフォルトはスキップ不可に設定
-      sentAt: FieldValue.serverTimestamp(),  // 送信日時
+      questionId: questionRef.id, // ドキュメントIDをそのまま割り当て
+      sessionId: "dummy-session-id-001", // 本来はリクエスト等から受け取る
+      teacherId: "dummy-teacher-id-001", // 本来はセッション情報等から特定する
+      questionText: body.content, // 先生が入力した質問文
+      isSkippable: false, // デフォルトはスキップ不可に設定
+      sentAt: FieldValue.serverTimestamp(), // 送信日時
     });
 
     logger.info("Teacher question created and saved to Firestore", {
@@ -887,7 +887,7 @@ export const teacherQuestion = onRequest(async (request, response) => {
   } catch (error) {
     // データベース保存エラー時の処理
     logger.error("Failed to save question to Firestore", error);
-    response.status(500).json({ error: "Internal server error." });
+    response.status(500).json({error: "Internal server error."});
   }
 });
 
@@ -952,7 +952,7 @@ export const teacherScheduleTeacher = onRequest(async (request, response) => {
     // 2. 操作元ユーザーの存在と教師権限チェック
     const userDoc = await db.collection("users").doc(operatingUserId).get();
     if (!userDoc.exists) {
-      response.status(404).json({ error: "Operating user not found." });
+      response.status(404).json({error: "Operating user not found."});
       return;
     }
     const userData = userDoc.data();
@@ -968,7 +968,7 @@ export const teacherScheduleTeacher = onRequest(async (request, response) => {
     const sessionDoc = await sessionRef.get();
 
     if (!sessionDoc.exists) {
-      response.status(404).json({ error: "Daily session not found." });
+      response.status(404).json({error: "Daily session not found."});
       return;
     }
 
@@ -984,7 +984,7 @@ export const teacherScheduleTeacher = onRequest(async (request, response) => {
     // 4. 紐づく時間割（SCHEDULES）の取得
     const scheduleDoc = await db.collection("schedules").doc(scheduleId).get();
     if (!scheduleDoc.exists) {
-      response.status(404).json({ error: "Associated schedule not found." });
+      response.status(404).json({error: "Associated schedule not found."});
       return;
     }
 
@@ -1017,10 +1017,9 @@ export const teacherScheduleTeacher = onRequest(async (request, response) => {
     });
 
     response.status(204).send();
-
   } catch (err) {
-    logger.error("Error updating daily session teacher", { error: err });
-    response.status(500).json({ error: "Internal server error." });
+    logger.error("Error updating daily session teacher", {error: err});
+    response.status(500).json({error: "Internal server error."});
   }
 });
 
@@ -1190,8 +1189,8 @@ export const teacherRegisterBeacon = onRequest(async (request, response) => {
       beaconId: beaconId,
     });
   } catch (err) {
-    logger.error("Error registering teacher beacon", { error: err });
-    response.status(500).json({ error: "Internal server error." });
+    logger.error("Error registering teacher beacon", {error: err});
+    response.status(500).json({error: "Internal server error."});
   }
 });
 
@@ -1207,7 +1206,7 @@ export const teacherRegisterBeacon = onRequest(async (request, response) => {
 export const generateDailySessions = onSchedule(
   {
     schedule: "0 6 * * 1-5", // 平日 毎朝 06:00 UTC (JST 15:00) → 下で timeZone 指定
-    timeZone: "Asia/Tokyo",  // JST 06:00 に実行
+    timeZone: "Asia/Tokyo", // JST 06:00 に実行
     region: "us-central1",
   },
   async () => {
@@ -1250,7 +1249,7 @@ export const generateDailySessions = onSchedule(
         .get();
 
       if (schedulesSnapshot.empty) {
-        logger.info("No schedules found for today.", { dayOfWeek });
+        logger.info("No schedules found for today.", {dayOfWeek});
         return;
       }
 
@@ -1278,7 +1277,7 @@ export const generateDailySessions = onSchedule(
         const sessionData = {
           scheduleId,
           classId: scheduleData.classId,
-          teacherId: scheduleData.teacherId, // デフォルトの教師をコピー
+          teacherId: scheduleData.defaultTeacherId, // デフォルトの教師をコピー
           date: todayTimestamp,
           createdAt: FieldValue.serverTimestamp(),
         };
@@ -1294,7 +1293,7 @@ export const generateDailySessions = onSchedule(
         structuredData: true,
       });
     } catch (err) {
-      logger.error("Error generating daily sessions", { error: err });
+      logger.error("Error generating daily sessions", {error: err});
       throw err; // Cloud Scheduler にリトライさせる
     }
   }
@@ -1307,7 +1306,9 @@ export const generateDailySessions = onSchedule(
  * 手動トリガー用エンドポイント。
  * 指定日の dailySessions を生成する。
  */
-export const adminGenerateDailySessions = onRequest(async (request, response) => {
+export const adminGenerateDailySessions = onRequest(async (
+  request, response
+) => {
   setCorsHeaders(response);
 
   if (request.method === "OPTIONS") {
@@ -1342,7 +1343,7 @@ export const adminGenerateDailySessions = onRequest(async (request, response) =>
   if (isNonEmptyString(body.date)) {
     // YYYY-MM-DD 形式のバリデーション
     if (!/^\d{4}-\d{2}-\d{2}$/.test(body.date)) {
-      response.status(400).json({ error: "date must be YYYY-MM-DD format." });
+      response.status(400).json({error: "date must be YYYY-MM-DD format."});
       return;
     }
     targetDate = new Date(`${body.date}T00:00:00+09:00`);
@@ -1350,9 +1351,10 @@ export const adminGenerateDailySessions = onRequest(async (request, response) =>
     const now = new Date();
     const jstNowTime = now.getTime() + 9 * 60 * 60 * 1000;
     const jstNow = new Date(jstNowTime);
-    targetDate = new Date(
-      `${jstNow.getUTCFullYear()}-${String(jstNow.getUTCMonth() + 1).padStart(2, "0")}-${String(jstNow.getUTCDate()).padStart(2, "0")}T00:00:00+09:00`
-    );
+    const yyyy = jstNow.getUTCFullYear();
+    const mm = String(jstNow.getUTCMonth() + 1).padStart(2, "0");
+    const dd = String(jstNow.getUTCDate()).padStart(2, "0");
+    targetDate = new Date(`${yyyy}-${mm}-${dd}T00:00:00+09:00`);
   }
 
   // 常に JST で曜日を判定する (targetDate + 9 hours)
@@ -1361,15 +1363,18 @@ export const adminGenerateDailySessions = onRequest(async (request, response) =>
   const jsDay = jstDateForDay.getUTCDay();
 
   if (jsDay === 0 || jsDay === 6) {
-    response.status(400).json({ error: "Specified date is a weekend." });
+    response.status(400).json({error: "Specified date is a weekend."});
     return;
   }
 
   const dayOfWeek = jsDay; // 1=月 〜 5=金
   const todayTimestamp = Timestamp.fromDate(targetDate);
-  const dateStr = `${jstDateForDay.getUTCFullYear()}-${String(jstDateForDay.getUTCMonth() + 1).padStart(2, "0")}-${String(jstDateForDay.getUTCDate()).padStart(2, "0")}`;
+  const dsYyyy = jstDateForDay.getUTCFullYear();
+  const dsMm = String(jstDateForDay.getUTCMonth() + 1).padStart(2, "0");
+  const dsDd = String(jstDateForDay.getUTCDate()).padStart(2, "0");
+  const dateStr = `${dsYyyy}-${dsMm}-${dsDd}`;
 
-  logger.info("adminGenerateDailySessions info", { dateStr, dayOfWeek, jsDay });
+  logger.info("adminGenerateDailySessions info", {dateStr, dayOfWeek, jsDay});
 
   try {
     const schedulesSnapshot = await db
@@ -1378,7 +1383,11 @@ export const adminGenerateDailySessions = onRequest(async (request, response) =>
       .get();
 
     if (schedulesSnapshot.empty) {
-      response.status(200).json({ message: "No schedules for this day.", created: 0, skipped: 0 });
+      response.status(200).json({
+        message: "No schedules for this day.",
+        created: 0,
+        skipped: 0,
+      });
       return;
     }
 
@@ -1404,7 +1413,7 @@ export const adminGenerateDailySessions = onRequest(async (request, response) =>
       const sessionData = {
         scheduleId,
         classId: scheduleData.classId,
-        teacherId: scheduleData.teacherId,
+        teacherId: scheduleData.defaultTeacherId,
         date: todayTimestamp,
         createdAt: FieldValue.serverTimestamp(),
       };
@@ -1421,8 +1430,8 @@ export const adminGenerateDailySessions = onRequest(async (request, response) =>
       skipped: skippedCount,
     });
   } catch (err) {
-    logger.error("Error generating daily sessions", { error: err });
-    response.status(500).json({ error: "Internal server error." });
+    logger.error("Error generating daily sessions", {error: err});
+    response.status(500).json({error: "Internal server error."});
   }
 });
 
