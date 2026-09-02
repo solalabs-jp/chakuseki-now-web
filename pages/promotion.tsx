@@ -2,6 +2,7 @@ import type { NextPage } from 'next';
 import { useRouter } from 'next/router';
 import { useState } from 'react';
 import styles from '../styles/Promotion.module.css';
+import homeStyles from '../styles/Home.module.css';
 import UserProfileButton from '../components/UserProfileButton';
 
 
@@ -87,6 +88,15 @@ const PromotionPage: NextPage = () => {
           <p className={styles.subtitle}>次年度に向けた一括進級処理を行います。</p>
         </div>
         <div className={styles.headerRight}>
+          <div className={homeStyles.tabGroup}>
+            <button className={`${homeStyles.tab} ${homeStyles.tabActive}`}>
+              進級処理
+            </button>
+            <button
+              className={homeStyles.tab}
+              onClick={() => router.push('/teachers')}
+            >教員・BLE管理</button>
+          </div>
           <button className={styles.iconBtn}><BellIcon /></button>
           <UserProfileButton />
         </div>

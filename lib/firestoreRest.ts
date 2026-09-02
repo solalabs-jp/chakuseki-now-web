@@ -205,3 +205,74 @@ export async function listCollection(collectionName: string): Promise<FirestoreD
     data: fromFirestoreFields(doc.fields ?? {}),
   }));
 }
+
+function toFirestoreValue(value: unknown): FirestoreValue {
+  if (value === null || value === undefined) return { nullValue: null };
+  if (typeof value === "boolean") return { booleanValue: value };
+  if (typeof value === "number") {
+    return Number.isInteger(value) ? { integerValue: String(value) } : { doubleValue: value };
+  }
+  if (typeof value === "string") return { stringValue: value };
+  if (Array.isArray(value)) {
+    return { arrayValue: { values: value.map(toFirestoreValue) } };
+  }
+  if (typeof value === "object") {
+    return { mapValue: { fields: toFirestoreFields(value as Record<string, unknown>) } };
+  }
+  return { stringValue: String(value) };
+}
+
+function toFirestoreFields(data: Record<string, unknown>): Record<string, FirestoreValue> {
+  const fields: Record<string, FirestoreValue> = {};
+  for (const [key, value] of Object.entries(data)) {
+    fields[key] = toFirestoreValue(value);
+  }
+  return fields;
+}
+
+/**
+ * Merge-writes the given fields into a document, creating it if it doesn't
+ * exist yet. Fields not included in `data` are left untouched.
+ */
+export async function upsertDocument(
+  collectionName: string,
+  docId: string,
+  data: Record<string, unknown>
+): Promise<void> {
+  const token = await getAccessToken();
+  const updateMask = Object.keys(data)
+    .map((key) => `updateMask.fieldPaths=${encodeURIComponent(key)}`)
+    .join("&");
+  const url = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents/${collectionName}/${docId}?${updateMask}`;
+
+  const response = await fetch(url, {
+    method: "PATCH",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ fields: toFirestoreFields(data) }),
+  });
+
+  if (!response.ok) {
+    throw new Error(
+      `Failed to upsert ${collectionName}/${docId}: ${response.status} ${await response.text()}`
+    );
+  }
+}
+
+export async function deleteDocument(collectionName: string, docId: string): Promise<void> {
+  const token = await getAccessToken();
+  const url = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents/${collectionName}/${docId}`;
+
+  const response = await fetch(url, {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${token}` },
+  });
+
+  if (!response.ok) {
+    throw new Error(
+      `Failed to delete ${collectionName}/${docId}: ${response.status} ${await response.text()}`
+    );
+  }
+}
