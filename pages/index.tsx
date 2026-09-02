@@ -10,8 +10,8 @@ import UserProfileButton from '../components/UserProfileButton';
 function BellIcon() {
   return (
     <svg width="18" height="18" fill="none" stroke="#6b7280" strokeWidth="1.5" viewBox="0 0 24 24" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
-      <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
+      <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
+      <path d="M13.73 21a2 2 0 0 1-3.46 0" />
     </svg>
   );
 }
@@ -19,9 +19,9 @@ function BellIcon() {
 function UserCircleIcon() {
   return (
     <svg width="18" height="18" fill="none" stroke="#6b7280" strokeWidth="1.5" viewBox="0 0 24 24" strokeLinecap="round" strokeLinejoin="round">
-      <circle cx="12" cy="12" r="10"/>
-      <circle cx="12" cy="10" r="3"/>
-      <path d="M7 20.662V19a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v1.662"/>
+      <circle cx="12" cy="12" r="10" />
+      <circle cx="12" cy="10" r="3" />
+      <path d="M7 20.662V19a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v1.662" />
     </svg>
   );
 }
@@ -29,8 +29,8 @@ function UserCircleIcon() {
 function MonitorIcon() {
   return (
     <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24" strokeLinecap="round" strokeLinejoin="round">
-      <rect x="2" y="3" width="20" height="14" rx="2"/>
-      <path d="M8 21h8M12 17v4"/>
+      <rect x="2" y="3" width="20" height="14" rx="2" />
+      <path d="M8 21h8M12 17v4" />
     </svg>
   );
 }
@@ -109,7 +109,7 @@ const Home: NextPage = () => {
         if (data.error) return;
         setClasses(data.classes);
       })
-      .catch(() => {});
+      .catch(() => { });
   }, []);
 
   useEffect(() => {
@@ -119,7 +119,7 @@ const Home: NextPage = () => {
         if (data.error) return;
         setScheduleItems((data.schedule as ApiScheduleEntry[]).map(toScheduleItem));
       })
-      .catch(() => {});
+      .catch(() => { });
   }, [selectedClassId]);
 
   const highlightedScheduleId =
@@ -160,7 +160,7 @@ const Home: NextPage = () => {
         </div>
       </div>
 
-      <div className={styles.monitorRow} style={{ justifyContent: 'space-between' }}>
+      <div className={styles.monitorRow}>
         <div className={scheduleStyles.filterLeft}>
           <span className={scheduleStyles.filterLabel}>クラス:</span>
           {classes.map((cls) => (
@@ -173,14 +173,10 @@ const Home: NextPage = () => {
             </button>
           ))}
         </div>
-        <Link href="/monitor" className={styles.monitorBtn}>
-          <MonitorIcon />
-          モニター投影画面を開く
-        </Link>
       </div>
 
       <div className={styles.sectionHeader}>
-        <svg width="14" height="14" fill="none" stroke="#dc2626" strokeWidth="1.5" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2" strokeLinecap="round"/></svg>
+        <svg width="14" height="14" fill="none" stroke="#dc2626" strokeWidth="1.5" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" /><path d="M12 6v6l4 2" strokeLinecap="round" /></svg>
         <span className={styles.sectionLabel}>本日の授業</span>
       </div>
 
