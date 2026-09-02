@@ -49,10 +49,19 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         };
       });
 
+    const periodOptions = periods
+      .map((p) => ({
+        id: p.id,
+        period: Number(p.data.period ?? 0),
+        label: `${p.data.period}限（${formatTime(p.data.startAt)}-${formatTime(p.data.endAt)}）`,
+      }))
+      .sort((a, b) => a.period - b.period);
+
     res.status(200).json({
       classId,
       className: cls?.data.name ?? classId,
       schedules: classSchedules,
+      periods: periodOptions,
     });
   } catch (error) {
     console.error("timetable/detail error", error);
