@@ -249,10 +249,32 @@ export const loginWithEmailPassword = onRequest(async (request, response) => {
     if (directDoc.exists) {
       role = directDoc.data()?.role ?? null;
       userId = uid;
-      displayName = directDoc.data()?.displayName ?? null;
+      displayName = directDoc.data()?.name ?? directDoc.data()?.displayName ?? null;
       grade = directDoc.data()?.grade ?? null;
       className = directDoc.data()?.className ?? null;
       email = directDoc.data()?.email ?? null;
+    } else {
+      // uid が Firestore の doc ID と一致しない場合（テストデータ等）は email で検索
+      const byEmailSnapshot = await db
+        .collection("users")
+        .where("email", "==", body.email)
+        .limit(1)
+        .get();
+      if (!byEmailSnapshot.empty) {
+        const matchedDoc = byEmailSnapshot.docs[0];
+        role = matchedDoc.data()?.role ?? null;
+        userId = matchedDoc.id;
+        displayName = matchedDoc.data()?.name ?? matchedDoc.data()?.displayName ?? null;
+        grade = matchedDoc.data()?.grade ?? null;
+        className = matchedDoc.data()?.className ?? null;
+        email = matchedDoc.data()?.email ?? null;
+      }
+    }
+
+    if (role !== "teacher") {
+      logger.warn("Login rejected: not a teacher account", {uid, role});
+      response.status(403).json({error: "教員アカウントのみログインできます。"});
+      return;
     }
 
     logger.info("Login successful", {uid, role, structuredData: true});
