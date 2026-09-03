@@ -76,21 +76,13 @@ const MonitorPage: NextPage & { getLayout: (page: ReactElement) => ReactElement 
           setQuestionText(event.data.question);
         }
       };
-    } catch {}
-
-    const pollId = setInterval(() => {
-      const current = localStorage.getItem('monitorQuestion');
-      if (current && current !== questionText) {
-        setQuestionText(current);
-      }
-    }, 1000);
+    } catch { }
 
     return () => {
       window.removeEventListener('storage', handleStorage);
       if (bc) bc.close();
-      clearInterval(pollId);
     };
-  }, [questionText]);
+  }, []);
 
   const timeStr = mounted && now ? now.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }) : '';
   const dateStr = mounted && now ? now.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) : '';

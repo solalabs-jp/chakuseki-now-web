@@ -1,4 +1,5 @@
 import type { NextPage } from 'next';
+import { useRouter } from 'next/router';
 import { useEffect, useState } from 'react';
 import UserProfileButton from '../components/UserProfileButton';
 import styles from '../styles/Attendance.module.css';
@@ -91,6 +92,7 @@ type RealtimeStudent = {
 };
 
 const AttendancePage: NextPage = () => {
+  const router = useRouter();
   const [question, setQuestion] = useState('');
   const [isSent, setIsSent] = useState(false);
   const [stats, setStats] = useState<AttendanceStats | null>(null);
@@ -108,7 +110,7 @@ const AttendancePage: NextPage = () => {
         if (data.error) return;
         setStats(data);
       })
-      .catch(() => {});
+      .catch(() => { });
 
     fetch('/api/attendance/realtime?classId=class-2A')
       .then((res) => res.json())
@@ -116,7 +118,7 @@ const AttendancePage: NextPage = () => {
         if (data.error) return;
         setStudents(data.students);
       })
-      .catch(() => {});
+      .catch(() => { });
   }, []);
 
   const handleSendToMonitor = () => {
@@ -125,14 +127,13 @@ const AttendancePage: NextPage = () => {
       return;
     }
     localStorage.setItem('monitorQuestion', question.trim());
-    window.dispatchEvent(new Event('storage'));
     try {
       const bc = new BroadcastChannel('monitor_channel');
       bc.postMessage({ type: 'UPDATE_QUESTION', question: question.trim() });
       bc.close();
-    } catch {}
+    } catch { }
 
-    window.open('/monitor', '_blank');
+    router.push('/monitor');
 
     setIsSent(true);
     setTimeout(() => setIsSent(false), 3000);
