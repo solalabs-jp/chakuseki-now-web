@@ -5,6 +5,7 @@ import { useRouter } from 'next/router';
 import styles from '../styles/Home.module.css';
 import scheduleStyles from '../styles/Schedule.module.css';
 import UserProfileButton from '../components/UserProfileButton';
+import { authHeaders } from '../lib/clientAuth';
 
 
 function BellIcon() {
@@ -103,7 +104,7 @@ const Home: NextPage = () => {
   const currentRowRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
-    fetch('/api/timetable/classes')
+    fetch('/api/timetable/classes', { headers: authHeaders() })
       .then((res) => res.json())
       .then((data) => {
         if (data.error) return;
@@ -113,7 +114,7 @@ const Home: NextPage = () => {
   }, []);
 
   useEffect(() => {
-    fetch(`/api/dashboard/today?classId=${encodeURIComponent(selectedClassId)}`)
+    fetch(`/api/dashboard/today?classId=${encodeURIComponent(selectedClassId)}`, { headers: authHeaders() })
       .then((res) => res.json())
       .then((data) => {
         if (data.error) return;

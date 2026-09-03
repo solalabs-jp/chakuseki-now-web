@@ -1,5 +1,6 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { listCollection } from "../../../lib/firestoreRest";
+import { requireTeacher } from "../../../lib/auth";
 
 const STATUS_LABELS: Record<string, string> = {
   present: "出席",
@@ -24,6 +25,9 @@ function toJstDateString(value: unknown): string | null {
 }
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+  const uid = await requireTeacher(req, res);
+  if (!uid) return;
+
   const classId = String(req.query.classId ?? "class-2A");
 
   try {

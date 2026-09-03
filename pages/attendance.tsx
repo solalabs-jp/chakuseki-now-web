@@ -1,6 +1,7 @@
 import type { NextPage } from 'next';
 import { useEffect, useState } from 'react';
 import UserProfileButton from '../components/UserProfileButton';
+import { authHeaders } from '../lib/clientAuth';
 import styles from '../styles/Attendance.module.css';
 
 function BellIcon() {
@@ -96,7 +97,7 @@ const AttendancePage: NextPage = () => {
   const [students, setStudents] = useState<RealtimeStudent[]>([]);
 
   useEffect(() => {
-    fetch('/api/attendance/stats?classId=class-2A')
+    fetch('/api/attendance/stats?classId=class-2A', { headers: authHeaders() })
       .then((res) => res.json())
       .then((data) => {
         if (data.error) return;
@@ -104,7 +105,7 @@ const AttendancePage: NextPage = () => {
       })
       .catch(() => {});
 
-    fetch('/api/attendance/realtime?classId=class-2A')
+    fetch('/api/attendance/realtime?classId=class-2A', { headers: authHeaders() })
       .then((res) => res.json())
       .then((data) => {
         if (data.error) return;
