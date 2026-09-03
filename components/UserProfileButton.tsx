@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useRouter } from 'next/router';
 import styles from '../styles/UserProfileButton.module.css';
 
@@ -30,11 +31,33 @@ function UserCircleIcon() {
   );
 }
 
-export default function UserProfileButton() {
+type UserProfileButtonProps = {
+  /** 'icon': page-header avatar button (default). 'card': full name/role row used in the sidebar. */
+  variant?: 'icon' | 'card';
+  cardClassName?: string;
+  avatarClassName?: string;
+  textClassName?: string;
+  nameClassName?: string;
+  subClassName?: string;
+};
+
+export default function UserProfileButton({
+  variant = 'icon',
+  cardClassName,
+  avatarClassName,
+  textClassName,
+  nameClassName,
+  subClassName,
+}: UserProfileButtonProps) {
   const [isOpen, setIsOpen] = useState(false);
   const router = useRouter();
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [user, setUser] = useState<CurrentUser>(fallbackUser);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   useEffect(() => {
     if (typeof window === 'undefined') {
@@ -83,9 +106,12 @@ export default function UserProfileButton() {
     return `${first}${last}`.toUpperCase();
   }, [user.displayName]);
 
+  const subLabel = user.className ? `担任 ${user.className}` : user.role;
+
   const handleLogout = () => {
     if (typeof window !== 'undefined') {
       window.localStorage.removeItem('authUser');
+      window.localStorage.removeItem('authToken');
     }
     setIsLoggedIn(false);
     setUser(fallbackUser);
@@ -96,14 +122,29 @@ export default function UserProfileButton() {
   return (
     <>
       {!isOpen ? (
-        isLoggedIn ? (
+        variant === 'card' ? (
+          <button
+            type="button"
+            className={cardClassName}
+            onClick={() => (isLoggedIn ? setIsOpen(true) : router.push('/login'))}
+            aria-label={isLoggedIn ? 'ユーザー情報を表示' : 'ログインへ移動'}
+          >
+            <div className={avatarClassName}>{isLoggedIn ? initials : <UserCircleIcon />}</div>
+            <div className={textClassName}>
+              <span className={nameClassName}>
+                {isLoggedIn ? user.displayName : 'ログインしてください'}
+              </span>
+              <span className={subClassName}>{isLoggedIn ? subLabel : ''}</span>
+            </div>
+          </button>
+        ) : isLoggedIn ? (
           <button
             type="button"
             className={styles.iconBtn}
             onClick={() => setIsOpen(true)}
             aria-label="ユーザー情報を表示"
           >
-            <div className={styles.avatar}>{initials}</div>
+            <div className={styles.triggerAvatar}>{initials}</div>
           </button>
         ) : (
           <button
@@ -117,47 +158,50 @@ export default function UserProfileButton() {
         )
       ) : null}
 
-      {isOpen ? (
-        <div className={styles.overlay} onClick={() => setIsOpen(false)}>
-          <div className={styles.panel} onClick={(event) => event.stopPropagation()}>
-            <div className={styles.header}>
-              <div className={styles.avatar}>{initials}</div>
-              <div>
-                <div className={styles.name}>{user.displayName}</div>
-                <div className={styles.role}>{user.role}</div>
-              </div>
-            </div>
+      {isOpen && mounted
+        ? createPortal(
+            <div className={styles.overlay} onClick={() => setIsOpen(false)}>
+              <div className={styles.panel} onClick={(event) => event.stopPropagation()}>
+                <div className={styles.header}>
+                  <div className={styles.avatar}>{initials}</div>
+                  <div>
+                    <div className={styles.name}>{user.displayName}</div>
+                    <div className={styles.role}>{user.role}</div>
+                  </div>
+                </div>
 
-            <div className={styles.body}>
-              <div className={styles.row}>
-                <span>メール</span>
-                <strong>{user.email}</strong>
-              </div>
-              <div className={styles.row}>
-                <span>ロール</span>
-                <strong>{user.role}</strong>
-              </div>
-              <div className={styles.row}>
-                <span>学年</span>
-                <strong>{user.grade || '未設定'}</strong>
-              </div>
-              <div className={styles.row}>
-                <span>クラス</span>
-                <strong>{user.className || '未設定'}</strong>
-              </div>
-            </div>
+                <div className={styles.body}>
+                  <div className={styles.row}>
+                    <span>メール</span>
+                    <strong>{user.email}</strong>
+                  </div>
+                  <div className={styles.row}>
+                    <span>ロール</span>
+                    <strong>{user.role}</strong>
+                  </div>
+                  <div className={styles.row}>
+                    <span>学年</span>
+                    <strong>{user.grade || '未設定'}</strong>
+                  </div>
+                  <div className={styles.row}>
+                    <span>クラス</span>
+                    <strong>{user.className || '未設定'}</strong>
+                  </div>
+                </div>
 
-            <div className={styles.actions}>
-              <button type="button" className={styles.button} onClick={() => setIsOpen(false)}>
-                閉じる
-              </button>
-              <button type="button" className={styles.logoutButton} onClick={handleLogout}>
-                ログアウト
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : null}
+                <div className={styles.actions}>
+                  <button type="button" className={styles.button} onClick={() => setIsOpen(false)}>
+                    閉じる
+                  </button>
+                  <button type="button" className={styles.logoutButton} onClick={handleLogout}>
+                    ログアウト
+                  </button>
+                </div>
+              </div>
+            </div>,
+            document.body
+          )
+        : null}
     </>
   );
 }

@@ -100,8 +100,17 @@
   gap: 9px;
   padding: 10px 10px;
   background: #fef2f2;
+  border: none;
   border-radius: 10px;
   margin-top: 12px;
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+}
+
+.userCard:hover {
+  background: #fde8e8;
 }
 
 .userAvatar {
