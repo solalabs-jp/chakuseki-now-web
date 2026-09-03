@@ -1,6 +1,6 @@
 import type { NextPage } from 'next';
 import { useRouter } from 'next/router';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import styles from '../styles/Class.module.css';
 import UserProfileButton from '../components/UserProfileButton';
 
@@ -50,29 +50,29 @@ function WarningIcon() {
   );
 }
 
-const watchStudents = [
-  { name: '稲吉 悠斗', initials: 'IY', note: '今週3日間欠席', pct: '78%', color: '#dc2626' },
-  { name: '成毛 迅哉', initials: 'NJ', note: '今月4回遅刻', pct: '85%', color: '#f59e0b' },
-  { name: '杉田 泰貴', initials: 'ST', note: '連続欠席', pct: '81%', color: '#dc2626' },
-];
-
 type StatusType = '出席' | '欠席' | '遅刻' | '遅刻15m' | '–';
 
-const classStudents: Array<{
+type StudentData = {
+  id: string;
   name: string;
   initials: string;
   color: string;
+  absenceRate: number;
+  attendancePercent: number;
   p1: StatusType;
   p2: StatusType;
   p3: StatusType;
   p4: StatusType;
   p5: StatusType;
-}> = [
-  { name: '稲吉 悠斗', initials: 'IY', color: '#1d4ed8', p1: '出席', p2: '出席', p3: '出席', p4: '出席', p5: '出席' },
-  { name: '鈴木 拓也', initials: 'ST', color: '#dc2626', p1: '欠席', p2: '欠席', p3: '欠席', p4: '欠席', p5: '欠席' },
-  { name: '鈴木 廉士', initials: 'SR', color: '#b45309', p1: '遅刻15m', p2: '出席', p3: '出席', p4: '出席', p5: '出席' },
-  { name: '省田 悠綜', initials: 'MJ', color: '#6b7280', p1: '出席', p2: '出席', p3: '–', p4: '–', p5: '–' },
-];
+};
+
+type WatchStudent = {
+  name: string;
+  initials: string;
+  color: string;
+  pct: string;
+  note: string;
+};
 
 function StatusBadge({ status }: { status: StatusType }) {
   const map: Record<StatusType, { label: string; bg: string; color: string }> = {
@@ -96,6 +96,30 @@ function StatusBadge({ status }: { status: StatusType }) {
 const ClassPage: NextPage = () => {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<'担当授業' | '担任クラス'>('担任クラス');
+  
+  const [loading, setLoading] = useState(true);
+  const [overallAttendanceRate, setOverallAttendanceRate] = useState(0);
+  const [watchList, setWatchList] = useState<WatchStudent[]>([]);
+  const [studentsData, setStudentsData] = useState<StudentData[]>([]);
+
+  useEffect(() => {
+    fetch('/api/class/overview?classId=class-2A')
+      .then(res => res.json())
+      .then(data => {
+        if (data.error) {
+          console.error(data.error);
+          return;
+        }
+        setOverallAttendanceRate(data.overallAttendanceRate);
+        setWatchList(data.watchList);
+        setStudentsData(data.studentsData);
+        setLoading(false);
+      })
+      .catch(err => {
+        console.error(err);
+        setLoading(false);
+      });
+  }, []);
 
   const handleTab = (tab: '担当授業' | '担任クラス') => {
     setActiveTab(tab);
@@ -105,7 +129,7 @@ const ClassPage: NextPage = () => {
   // Circle gauge SVG
   const r = 54;
   const circ = 2 * Math.PI * r;
-  const offset = circ - (95 / 100) * circ;
+  const offset = circ - (overallAttendanceRate / 100) * circ;
 
   return (
     <div className={styles.page}>
@@ -143,7 +167,7 @@ const ClassPage: NextPage = () => {
                   strokeDasharray={circ} strokeDashoffset={offset}
                   strokeLinecap="round" transform="rotate(-90 74 74)"
                 />
-                <text x="74" y="70" textAnchor="middle" fontSize="26" fontWeight="700" fill="#111827">95%</text>
+                <text x="74" y="70" textAnchor="middle" fontSize="26" fontWeight="700" fill="#111827">{overallAttendanceRate}%</text>
                 <text x="74" y="88" textAnchor="middle" fontSize="10" fill="#6b7280">↑+1.2%　今週比</text>
               </svg>
             </div>
@@ -159,7 +183,11 @@ const ClassPage: NextPage = () => {
               <button className={styles.linkBtn}>すべて見る</button>
             </div>
             <div className={styles.watchList}>
-              {watchStudents.map((s) => (
+              {loading ? (
+                <div style={{ padding: '20px', color: '#6b7280', fontSize: '14px', textAlign: 'center' }}>読み込み中...</div>
+              ) : watchList.length === 0 ? (
+                <div style={{ padding: '20px', color: '#6b7280', fontSize: '14px', textAlign: 'center' }}>該当なし</div>
+              ) : watchList.map((s) => (
                 <div key={s.name} className={styles.watchRow}>
                   <div className={styles.watchAvatar} style={{ background: s.color }}>
                     {s.initials[0]}
@@ -170,7 +198,7 @@ const ClassPage: NextPage = () => {
                   </div>
                   <div className={styles.watchPct}>
                     <span style={{ color: s.color, fontWeight: 700, fontSize: 14 }}>{s.pct}</span>
-                    <span className={styles.termLabel}>Term</span>
+                    <span className={styles.termLabel}>欠席</span>
                   </div>
                 </div>
               ))}
@@ -206,7 +234,9 @@ const ClassPage: NextPage = () => {
               </tr>
             </thead>
             <tbody>
-              {classStudents.map((s) => (
+              {loading ? (
+                <tr><td colSpan={6} style={{ padding: '20px', textAlign: 'center', color: '#6b7280' }}>読み込み中...</td></tr>
+              ) : studentsData.map((s) => (
                 <tr key={s.name} className={styles.tr}>
                   <td className={styles.td}>
                     <div className={styles.studentCell}>
@@ -225,7 +255,7 @@ const ClassPage: NextPage = () => {
           </table>
 
           <div className={styles.tableFooter}>
-            Showing 4 of 28 students in Class 2A
+            Showing {studentsData.length} of {studentsData.length} students in Class 2A
           </div>
         </div>
       </div>
