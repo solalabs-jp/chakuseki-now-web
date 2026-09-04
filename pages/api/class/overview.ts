@@ -71,7 +71,16 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     // 4. Today's sessions mapped by period
     const periodsById = new Map(periods.map((p) => [p.id, p.data]));
     const periodNumToSessionIds = new Map<number, Set<string>>();
-    
+    const periodNumToStartMinutes = new Map<number, number | null>();
+
+    for (const p of periods) {
+      if (typeof p.data.period === 'number') {
+        const startAt = p.data.startAt;
+        const startMinutes = typeof startAt === 'number' ? Math.floor(startAt / 100) * 60 + (startAt % 100) : null;
+        periodNumToStartMinutes.set(p.data.period, startMinutes);
+      }
+    }
+
     const todayDailySessions = classDailySessions.filter((ds) => dailySessionDateString(ds.data.date ?? ds.data.timestamp) === today);
     for (const ds of todayDailySessions) {
       const scheduleId = String(ds.data.scheduleId);
@@ -93,21 +102,29 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     // 5. Aggregate student stats & today's attendance
     let totalClassAttended = 0;
     
+    const now = jstNow();
+    const nowMinutes = now.getHours() * 60 + now.getMinutes();
+
     const studentsData = classStudents.map((student, i) => {
       const studentRecords = attendanceRecords.filter(r => String(r.data.userId) === student.id);
       const classRecords = studentRecords.filter(r => classSessionIds.has(String(r.data.sessionId)));
-      
+
       const attendedCount = classRecords.filter(r => ATTENDED_STATUSES.has(String(r.data.status))).length;
       totalClassAttended += attendedCount;
 
       const absentCount = totalSessionsCount - attendedCount;
       const absenceRate = totalSessionsCount > 0 ? absentCount / totalSessionsCount : 0;
-      const attendancePercent = totalSessionsCount > 0 ? Math.round((attendedCount / totalSessionsCount) * 100) : 0;
 
       // Today's P1-P5
       const getPeriodStatus = (pNum: number): string => {
         const sessionIds = periodNumToSessionIds.get(pNum);
         if (!sessionIds || sessionIds.size === 0) return '–';
+        
+        const startMinutes = periodNumToStartMinutes.get(pNum);
+        if (startMinutes !== undefined && startMinutes !== null && nowMinutes < startMinutes) {
+          return '–';
+        }
+
         const record = studentRecords.find(r => sessionIds.has(String(r.data.sessionId)));
         if (!record) return '欠席'; // No record means absent if session exists
         return mapStatus(String(record.data.status));
@@ -119,7 +136,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         initials: initialsFromName(String(student.data.name || 'U')),
         color: AVATAR_COLORS[i % AVATAR_COLORS.length],
         absenceRate,
-        attendancePercent,
         absentCount,
         p1: getPeriodStatus(1),
         p2: getPeriodStatus(2),
@@ -129,24 +145,28 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       };
     });
 
-    const overallAttendanceRate = (totalSessionsCount * classStudents.length) > 0 
-      ? Math.round((totalClassAttended / (totalSessionsCount * classStudents.length)) * 100) 
+    const overallAttendanceRate = (totalSessionsCount * classStudents.length) > 0
+      ? Math.round((totalClassAttended / (totalSessionsCount * classStudents.length)) * 100)
       : 0;
 
     // 6. Top 3 students with highest absence rate (Watch List)
-    const sortedByAbsence = [...studentsData].sort((a, b) => b.absenceRate - a.absenceRate);
-    const watchList = sortedByAbsence.slice(0, 3).map(s => ({
+    const sortedByAbsence = [...studentsData]
+      .filter((s) => s.absentCount > 0)
+      .sort((a, b) => b.absenceRate - a.absenceRate);
+    const watchList = sortedByAbsence.slice(0, 3).map((s) => ({
+      id: s.id,
       name: s.name,
       initials: s.initials,
       color: s.color,
       pct: `${s.absentCount}回`,
-      note: s.absentCount >= 3 ? '欠席多数' : (s.absentCount > 0 ? '要注意' : '良好'),
+      note: s.absentCount >= 3 ? '欠席多数' : '要注意',
     }));
 
     res.status(200).json({
       overallAttendanceRate,
       watchList,
       studentsData,
+      totalStudents: classStudents.length,
     });
   } catch (error) {
     console.error("class/overview error", error);
