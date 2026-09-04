@@ -1,7 +1,9 @@
+
 import type { NextPage } from 'next';
 import { useRouter } from 'next/router';
 import { useEffect, useState } from 'react';
 import UserProfileButton from '../components/UserProfileButton';
+import { authHeaders } from '../lib/clientAuth';
 import styles from '../styles/Attendance.module.css';
 
 function BellIcon() {
@@ -104,21 +106,21 @@ const AttendancePage: NextPage = () => {
       setQuestion(saved);
     }
 
-    fetch('/api/attendance/stats?classId=class-2A')
+    fetch('/api/attendance/stats?classId=class-2A', { headers: authHeaders() })
       .then((res) => res.json())
       .then((data) => {
         if (data.error) return;
         setStats(data);
       })
-      .catch(() => { });
+      .catch(() => {});
 
-    fetch('/api/attendance/realtime?classId=class-2A')
+    fetch('/api/attendance/realtime?classId=class-2A', { headers: authHeaders() })
       .then((res) => res.json())
       .then((data) => {
         if (data.error) return;
         setStudents(data.students);
       })
-      .catch(() => { });
+      .catch(() => {});
   }, []);
 
   const handleSendToMonitor = () => {
@@ -131,7 +133,7 @@ const AttendancePage: NextPage = () => {
       const bc = new BroadcastChannel('monitor_channel');
       bc.postMessage({ type: 'UPDATE_QUESTION', question: question.trim() });
       bc.close();
-    } catch { }
+    } catch {}
 
     router.push('/monitor');
 

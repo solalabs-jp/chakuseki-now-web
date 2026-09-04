@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
 import styles from '../styles/ScheduleDetail.module.css';
 import UserProfileButton from '../components/UserProfileButton';
+import { authHeaders } from '../lib/clientAuth';
 
 
 function BellIcon() {
@@ -99,7 +100,7 @@ const ScheduleDetailPage: NextPage = () => {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    fetch(`/api/timetable/detail?classId=${encodeURIComponent(classId)}`)
+    fetch(`/api/timetable/detail?classId=${encodeURIComponent(classId)}`, { headers: authHeaders() })
       .then((res) => res.json())
       .then((data) => {
         if (data.error) {

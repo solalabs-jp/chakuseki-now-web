@@ -1,13 +1,24 @@
 .iconBtn {
-  width: 34px;
-  height: 34px;
-  border-radius: 50%;
-  border: 1px solid #e5e7eb;
-  background: #fff;
+  border: none;
+  background: none;
+  padding: 0;
   display: grid;
   place-items: center;
   cursor: pointer;
   color: #6b7280;
+}
+
+.triggerAvatar {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: #78350f;
+  color: white;
+  display: grid;
+  place-items: center;
+  font-size: 12px;
+  font-weight: 700;
+  flex-shrink: 0;
 }
 
 .overlay {

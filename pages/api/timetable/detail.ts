@@ -1,5 +1,6 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { listCollection } from "../../../lib/firestoreRest";
+import { requireTeacher } from "../../../lib/auth";
 
 function formatTime(value: unknown): string {
   // startAt/endAt may be an "HHMM" integer (e.g. 915) or an ISO timestamp string.
@@ -17,6 +18,9 @@ function formatTime(value: unknown): string {
 }
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+  const uid = await requireTeacher(req, res);
+  if (!uid) return;
+
   const classId = String(req.query.classId ?? "class-2A");
 
   try {

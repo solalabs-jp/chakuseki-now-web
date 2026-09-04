@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import styles from '../styles/Schedule.module.css';
 import UserProfileButton from '../components/UserProfileButton';
+import { authHeaders } from '../lib/clientAuth';
 
 
 function BellIcon() {
@@ -63,7 +64,7 @@ const Schedule: NextPage = () => {
   const [classes, setClasses] = useState<ClassCard[]>([]);
 
   useEffect(() => {
-    fetch('/api/timetable/classes')
+    fetch('/api/timetable/classes', { headers: authHeaders() })
       .then((res) => res.json())
       .then((data) => {
         if (data.error) return;
