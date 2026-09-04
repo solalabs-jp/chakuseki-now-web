@@ -1,5 +1,6 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { upsertDocument } from "../../../lib/firestoreRest";
+import { requireTeacher } from "../../../lib/auth";
 
 type ScheduleInput = {
   classId?: unknown;
@@ -14,6 +15,9 @@ function isNonEmptyString(value: unknown): value is string {
 }
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+  const uid = await requireTeacher(req, res);
+  if (!uid) return;
+
   if (req.method !== "POST") {
     res.setHeader("Allow", "POST");
     res.status(405).end();

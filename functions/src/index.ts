@@ -63,6 +63,8 @@ type RegisterRequestBody = {
   password?: unknown;
   role?: unknown;
   classId?: unknown;
+  name?: unknown;
+  beaconId?: unknown;
 };
 
 type CreateCheckinQuestionRequestBody = {
@@ -431,6 +433,13 @@ export const registerUser = onRequest(async (request, response) => {
     if (isNonEmptyString(body.classId)) {
       userData.classId = body.classId;
     }
+    if (isNonEmptyString(body.name)) {
+      userData.name = body.name;
+    }
+    if (isNonEmptyString(body.beaconId)) {
+      userData.beaconId = body.beaconId;
+    }
+    userData.email = body.email;
 
     await db.collection("users").doc(userRecord.uid).set(userData);
 

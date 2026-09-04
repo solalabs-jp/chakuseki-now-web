@@ -1,5 +1,6 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { deleteDocument, upsertDocument } from "../../../lib/firestoreRest";
+import { requireTeacher } from "../../../lib/auth";
 
 type TeacherInput = {
   name?: unknown;
@@ -13,6 +14,9 @@ function isNonEmptyString(value: unknown): value is string {
 }
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+  const uid = await requireTeacher(req, res);
+  if (!uid) return;
+
   const id = String(req.query.id ?? "");
 
   if (!isNonEmptyString(id)) {

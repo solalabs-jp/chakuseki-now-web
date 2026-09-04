@@ -1,5 +1,7 @@
 import type { NextApiRequest, NextApiResponse } from "next";
-import { listCollection, upsertDocument } from "../../../lib/firestoreRest";
+import { listCollection } from "../../../lib/firestoreRest";
+import { requireTeacher } from "../../../lib/auth";
+import { generateTempPassword, registerAuthUser } from "../../../lib/registerAuthUser";
 
 type TeacherInput = {
   name?: unknown;
@@ -13,6 +15,9 @@ function isNonEmptyString(value: unknown): value is string {
 }
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+  const uid = await requireTeacher(req, res);
+  if (!uid) return;
+
   if (req.method === "GET") {
     try {
       const [users, classes] = await Promise.all([
@@ -51,16 +56,19 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
 
     try {
-      const id = `teacher-${Date.now()}`;
-      await upsertDocument("users", id, {
+      const result = await registerAuthUser({
+        email: body.email,
+        password: generateTempPassword(),
         role: "teacher",
         name: body.name,
-        email: body.email,
-        classId: isNonEmptyString(body.classId) ? body.classId : "",
-        beaconId: isNonEmptyString(body.beaconId) ? body.beaconId : "",
-        createAt: new Date().toISOString(),
+        classId: isNonEmptyString(body.classId) ? body.classId : undefined,
+        beaconId: isNonEmptyString(body.beaconId) ? body.beaconId : undefined,
       });
-      res.status(201).json({ id });
+      if ("error" in result) {
+        res.status(result.status).json({ error: result.error });
+        return;
+      }
+      res.status(201).json({ id: result.uid });
     } catch (error) {
       console.error("teachers POST error", error);
       res.status(500).json({ error: error instanceof Error ? error.message : "Unknown error" });

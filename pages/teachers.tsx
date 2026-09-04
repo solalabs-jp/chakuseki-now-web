@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import styles from '../styles/Attendance.module.css';
 import homeStyles from '../styles/Home.module.css';
 import UserProfileButton from '../components/UserProfileButton';
+import { authHeaders } from '../lib/clientAuth';
 
 function BellIcon() {
   return (
@@ -87,7 +88,7 @@ const TeachersPage: NextPage = () => {
 
   const loadTeachers = () => {
     setLoading(true);
-    fetch('/api/teachers')
+    fetch('/api/teachers', { headers: authHeaders() })
       .then((res) => res.json())
       .then((data) => {
         if (data.error) {
@@ -134,13 +135,13 @@ const TeachersPage: NextPage = () => {
       if (editingId) {
         await fetch(`/api/teachers/${encodeURIComponent(editingId)}`, {
           method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', ...authHeaders() },
           body: JSON.stringify(form),
         });
       } else {
         await fetch('/api/teachers', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', ...authHeaders() },
           body: JSON.stringify(form),
         });
       }
@@ -158,7 +159,7 @@ const TeachersPage: NextPage = () => {
       return;
     }
     try {
-      await fetch(`/api/teachers/${encodeURIComponent(teacher.id)}`, { method: 'DELETE' });
+      await fetch(`/api/teachers/${encodeURIComponent(teacher.id)}`, { method: 'DELETE', headers: authHeaders() });
       loadTeachers();
     } catch (err) {
       setError(String(err));

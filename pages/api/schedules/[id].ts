@@ -1,11 +1,15 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { deleteDocument } from "../../../lib/firestoreRest";
+import { requireTeacher } from "../../../lib/auth";
 
 function isNonEmptyString(value: unknown): value is string {
   return typeof value === "string" && value.trim().length > 0;
 }
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+  const uid = await requireTeacher(req, res);
+  if (!uid) return;
+
   const id = String(req.query.id ?? "");
 
   if (req.method !== "DELETE") {
