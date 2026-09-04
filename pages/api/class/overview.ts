@@ -1,10 +1,22 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { listCollection } from "../../../lib/firestoreRest";
 
-function jstNow(): Date {
+function getJstNowParts() {
   const now = new Date();
-  const jstString = now.toLocaleString("en-US", { timeZone: "Asia/Tokyo" });
-  return new Date(jstString);
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Tokyo",
+    hour12: false,
+    hour: "numeric",
+    minute: "numeric",
+  }).formatToParts(now);
+
+  const hourStr = parts.find((p) => p.type === "hour")?.value || "0";
+  const minuteStr = parts.find((p) => p.type === "minute")?.value || "0";
+
+  const hour = parseInt(hourStr, 10) % 24;
+  const minute = parseInt(minuteStr, 10);
+
+  return { hour, minute };
 }
 
 function jstDateString(): string {
@@ -101,19 +113,38 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     // 5. Aggregate student stats & today's attendance
     let totalClassAttended = 0;
+    let totalClassSessions = 0;
     
-    const now = jstNow();
-    const nowMinutes = now.getHours() * 60 + now.getMinutes();
+    const jstParts = getJstNowParts();
+    const nowMinutes = jstParts.hour * 60 + jstParts.minute;
 
     const studentsData = classStudents.map((student, i) => {
       const studentRecords = attendanceRecords.filter(r => String(r.data.userId) === student.id);
       const classRecords = studentRecords.filter(r => classSessionIds.has(String(r.data.sessionId)));
 
-      const attendedCount = classRecords.filter(r => ATTENDED_STATUSES.has(String(r.data.status))).length;
-      totalClassAttended += attendedCount;
+      const attendedSessionIds = new Set(
+        classRecords
+          .filter(r => ATTENDED_STATUSES.has(String(r.data.status)))
+          .map(r => String(r.data.sessionId))
+      );
+      const absentSessionIds = new Set(
+        classRecords
+          .filter(r => String(r.data.status) === 'absent')
+          .map(r => String(r.data.sessionId))
+      );
 
-      const absentCount = totalSessionsCount - attendedCount;
-      const absenceRate = totalSessionsCount > 0 ? absentCount / totalSessionsCount : 0;
+      for (const id of attendedSessionIds) {
+        absentSessionIds.delete(id);
+      }
+
+      const attendedCount = attendedSessionIds.size;
+      const absentCount = absentSessionIds.size;
+      const studentTotalSessions = attendedCount + absentCount;
+
+      totalClassAttended += attendedCount;
+      totalClassSessions += studentTotalSessions;
+
+      const absenceRate = studentTotalSessions > 0 ? absentCount / studentTotalSessions : 0;
 
       // Today's P1-P5
       const getPeriodStatus = (pNum: number): string => {
@@ -145,8 +176,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       };
     });
 
-    const overallAttendanceRate = (totalSessionsCount * classStudents.length) > 0
-      ? Math.round((totalClassAttended / (totalSessionsCount * classStudents.length)) * 100)
+    const overallAttendanceRate = totalClassSessions > 0
+      ? Math.round((totalClassAttended / totalClassSessions) * 100)
       : 0;
 
     // 6. Top 3 students with highest absence rate (Watch List)
