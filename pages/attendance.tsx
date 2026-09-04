@@ -1,4 +1,6 @@
+
 import type { NextPage } from 'next';
+import { useRouter } from 'next/router';
 import { useEffect, useState } from 'react';
 import UserProfileButton from '../components/UserProfileButton';
 import { authHeaders } from '../lib/clientAuth';
@@ -7,8 +9,8 @@ import styles from '../styles/Attendance.module.css';
 function BellIcon() {
   return (
     <svg width="18" height="18" fill="none" stroke="#6b7280" strokeWidth="1.5" viewBox="0 0 24 24" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
-      <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
+      <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
+      <path d="M13.73 21a2 2 0 0 1-3.46 0" />
     </svg>
   );
 }
@@ -16,9 +18,9 @@ function BellIcon() {
 function UserCircleIcon() {
   return (
     <svg width="18" height="18" fill="none" stroke="#6b7280" strokeWidth="1.5" viewBox="0 0 24 24" strokeLinecap="round" strokeLinejoin="round">
-      <circle cx="12" cy="12" r="10"/>
-      <circle cx="12" cy="10" r="3"/>
-      <path d="M7 20.662V19a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v1.662"/>
+      <circle cx="12" cy="12" r="10" />
+      <circle cx="12" cy="10" r="3" />
+      <path d="M7 20.662V19a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v1.662" />
     </svg>
   );
 }
@@ -26,7 +28,7 @@ function UserCircleIcon() {
 function SearchIcon() {
   return (
     <svg width="14" height="14" fill="none" stroke="#9ca3af" strokeWidth="1.5" viewBox="0 0 24 24" strokeLinecap="round">
-      <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
+      <circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" />
     </svg>
   );
 }
@@ -34,7 +36,7 @@ function SearchIcon() {
 function FilterIcon() {
   return (
     <svg width="14" height="14" fill="none" stroke="#6b7280" strokeWidth="1.5" viewBox="0 0 24 24" strokeLinecap="round" strokeLinejoin="round">
-      <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/>
+      <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" />
     </svg>
   );
 }
@@ -42,7 +44,7 @@ function FilterIcon() {
 function PaperclipIcon() {
   return (
     <svg width="14" height="14" fill="none" stroke="#6b7280" strokeWidth="1.5" viewBox="0 0 24 24" strokeLinecap="round" strokeLinejoin="round">
-      <path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.47"/>
+      <path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.47" />
     </svg>
   );
 }
@@ -92,11 +94,18 @@ type RealtimeStudent = {
 };
 
 const AttendancePage: NextPage = () => {
+  const router = useRouter();
   const [question, setQuestion] = useState('');
+  const [isSent, setIsSent] = useState(false);
   const [stats, setStats] = useState<AttendanceStats | null>(null);
   const [students, setStudents] = useState<RealtimeStudent[]>([]);
 
   useEffect(() => {
+    const saved = localStorage.getItem('monitorQuestion');
+    if (saved) {
+      setQuestion(saved);
+    }
+
     fetch('/api/attendance/stats?classId=class-2A', { headers: authHeaders() })
       .then((res) => res.json())
       .then((data) => {
@@ -113,6 +122,24 @@ const AttendancePage: NextPage = () => {
       })
       .catch(() => {});
   }, []);
+
+  const handleSendToMonitor = () => {
+    if (!question.trim()) {
+      alert('お題・アンケート内容を入力してください。');
+      return;
+    }
+    localStorage.setItem('monitorQuestion', question.trim());
+    try {
+      const bc = new BroadcastChannel('monitor_channel');
+      bc.postMessage({ type: 'UPDATE_QUESTION', question: question.trim() });
+      bc.close();
+    } catch {}
+
+    router.push('/monitor');
+
+    setIsSent(true);
+    setTimeout(() => setIsSent(false), 3000);
+  };
 
   // circle gauge
   const pct = stats?.attendanceRate ?? 0;
@@ -139,7 +166,7 @@ const AttendancePage: NextPage = () => {
         <div className={styles.topLeft}>
           <div className={styles.gaugeWrap}>
             <svg width="120" height="120" viewBox="0 0 120 120">
-              <circle cx="60" cy="60" r={r} fill="none" stroke="#f3f4f6" strokeWidth="12"/>
+              <circle cx="60" cy="60" r={r} fill="none" stroke="#f3f4f6" strokeWidth="12" />
               <circle
                 cx="60" cy="60" r={r} fill="none" stroke="#dc2626" strokeWidth="12"
                 strokeDasharray={circ} strokeDashoffset={offset}
@@ -167,7 +194,7 @@ const AttendancePage: NextPage = () => {
         {/* Right: question panel */}
         <div className={styles.questionPanel}>
           <div className={styles.questionPanelTitle}>
-            <svg width="14" height="14" fill="none" stroke="#dc2626" strokeWidth="1.5" viewBox="0 0 24 24" strokeLinecap="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg>
+            <svg width="14" height="14" fill="none" stroke="#dc2626" strokeWidth="1.5" viewBox="0 0 24 24" strokeLinecap="round"><circle cx="12" cy="12" r="10" /><path d="M12 8v4M12 16h.01" /></svg>
             <span>生徒への質問送信</span>
           </div>
           <label className={styles.fieldLabel}>お題・アンケート内容</label>
@@ -182,9 +209,9 @@ const AttendancePage: NextPage = () => {
               <PaperclipIcon />
               添付
             </button>
-            <button className={styles.monitorDisplayBtn} onClick={() => alert('モニターに表示します')}>
-              <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24" strokeLinecap="round"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
-              モニターに表示
+            <button className={styles.monitorDisplayBtn} onClick={handleSendToMonitor}>
+              <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24" strokeLinecap="round"><rect x="2" y="3" width="20" height="14" rx="2" /><path d="M8 21h8M12 17v4" /></svg>
+              {isSent ? 'モニターに反映完了！' : 'モニターに表示'}
             </button>
           </div>
         </div>

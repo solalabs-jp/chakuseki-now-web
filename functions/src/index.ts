@@ -11,7 +11,7 @@ import * as http from "http";
 admin.initializeApp();
 const db = admin.firestore();
 
-setGlobalOptions({maxInstances: 10});
+setGlobalOptions({ maxInstances: 10 });
 
 type BeaconRequestBody = {
   beaconId?: unknown;
@@ -193,13 +193,13 @@ export const loginWithEmailPassword = onRequest(async (request, response) => {
   const body = (request.body ?? {}) as LoginRequestBody;
 
   if (!isNonEmptyString(body.email) || !isNonEmptyString(body.password)) {
-    response.status(400).json({error: "email and password are required."});
+    response.status(400).json({ error: "email and password are required." });
     return;
   }
 
   if (!FIREBASE_API_KEY) {
     logger.error("FIREBASE_API_KEY is not set");
-    response.status(500).json({error: "Server configuration error."});
+    response.status(500).json({ error: "Server configuration error." });
     return;
   }
 
@@ -225,9 +225,9 @@ export const loginWithEmailPassword = onRequest(async (request, response) => {
         code === "INVALID_PASSWORD" ||
         code === "INVALID_LOGIN_CREDENTIALS"
       ) {
-        response.status(401).json({error: "Invalid email or password."});
+        response.status(401).json({ error: "Invalid email or password." });
       } else {
-        response.status(400).json({error: code});
+        response.status(400).json({ error: code });
       }
       return;
     }
@@ -277,7 +277,7 @@ export const loginWithEmailPassword = onRequest(async (request, response) => {
       return;
     }
 
-    logger.info("Login successful", {uid, role, structuredData: true});
+    logger.info("Login successful", { uid, role, structuredData: true });
 
     response.status(200).json({
       idToken,
@@ -292,8 +292,8 @@ export const loginWithEmailPassword = onRequest(async (request, response) => {
     });
   } catch (err: unknown) {
     const errObj = err as Record<string, unknown>;
-    logger.error("authLogin error", {error: errObj});
-    response.status(500).json({error: "Internal server error."});
+    logger.error("authLogin error", { error: errObj });
+    response.status(500).json({ error: "Internal server error." });
   }
 });
 
@@ -446,11 +446,11 @@ export const registerUser = onRequest(async (request, response) => {
     });
   } catch (err: unknown) {
     const errObj = err as Record<string, unknown>;
-    logger.error("Error registering user", {error: errObj});
+    logger.error("Error registering user", { error: errObj });
     if (String(errObj?.code) === "auth/email-already-exists") {
-      response.status(409).json({error: "Email already exists."});
+      response.status(409).json({ error: "Email already exists." });
     } else {
-      response.status(500).json({error: "Internal server error."});
+      response.status(500).json({ error: "Internal server error." });
     }
   }
 });
@@ -753,7 +753,7 @@ export const studentTimetable = onRequest(async (request, response) => {
   try {
     const userDoc = await db.collection("users").doc(uid).get();
     if (!userDoc.exists) {
-      response.status(404).json({error: "User not found."});
+      response.status(404).json({ error: "User not found." });
       return;
     }
 
@@ -761,7 +761,7 @@ export const studentTimetable = onRequest(async (request, response) => {
     const classId = userData?.classId;
 
     if (!classId) {
-      response.status(404).json({error: "User does not belong to any class."});
+      response.status(404).json({ error: "User does not belong to any class." });
       return;
     }
 
@@ -787,8 +787,8 @@ export const studentTimetable = onRequest(async (request, response) => {
     response.status(200).json(timetables);
   } catch (err) {
     const errObj = err as Record<string, unknown>;
-    logger.error("Error fetching timetable", {error: errObj});
-    response.status(500).json({error: "Internal server error."});
+    logger.error("Error fetching timetable", { error: errObj });
+    response.status(500).json({ error: "Internal server error." });
   }
 });
 
@@ -1510,7 +1510,7 @@ const verifyToken = async (
     const errObj = err as Record<string, unknown>;
     logger.warn(
       "Token verification failed",
-      {error: errObj}
+      { error: errObj }
     );
     return null;
   }

@@ -76,7 +76,6 @@ const LoginPage: NextPageWithLayout = () => {
               type="email"
               value={email}
               onChange={(event) => setEmail(event.target.value)}
-              placeholder="teacher001@example.com"
               required
             />
           </label>
@@ -87,7 +86,6 @@ const LoginPage: NextPageWithLayout = () => {
               type="password"
               value={password}
               onChange={(event) => setPassword(event.target.value)}
-              placeholder="password123"
               required
             />
           </label>
