@@ -2,10 +2,26 @@ import type { NextApiRequest, NextApiResponse } from "next";
 import { listCollection } from "../../../lib/firestoreRest";
 import { requireTeacher } from "../../../lib/auth";
 
-function jstNow(): Date {
+function getJstNowParts() {
   const now = new Date();
-  const jstString = now.toLocaleString("en-US", { timeZone: "Asia/Tokyo" });
-  return new Date(jstString);
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Tokyo",
+    hour12: false,
+    hour: "numeric",
+    minute: "numeric",
+    weekday: "short",
+  }).formatToParts(now);
+
+  const hourStr = parts.find((p) => p.type === "hour")?.value || "0";
+  const minuteStr = parts.find((p) => p.type === "minute")?.value || "0";
+  const weekdayStr = parts.find((p) => p.type === "weekday")?.value || "Sun";
+
+  const hour = parseInt(hourStr, 10) % 24;
+  const minute = parseInt(minuteStr, 10);
+  const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  const dayOfWeek = Math.max(0, days.indexOf(weekdayStr));
+
+  return { hour, minute, dayOfWeek };
 }
 
 function jstDateString(): string {
@@ -58,9 +74,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         listCollection("attendanceRecords"),
       ]);
 
-    const now = jstNow();
-    const nowMinutes = now.getHours() * 60 + now.getMinutes();
-    const todayScheduleDay = toScheduleDayOfWeek(now.getDay());
+    const jstParts = getJstNowParts();
+    const nowMinutes = jstParts.hour * 60 + jstParts.minute;
+    const todayScheduleDay = toScheduleDayOfWeek(jstParts.dayOfWeek);
     const today = jstDateString();
 
     const periodsById = new Map(periods.map((p) => [p.id, p.data]));
