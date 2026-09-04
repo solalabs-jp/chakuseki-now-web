@@ -553,7 +553,12 @@ export const createCheckinQuestion = onRequest(async (request, response) => {
 
 // ─── Student endpoints ───────────────────────────────────────────────────────
 
-export const studentBeacon = onRequest((request, response) => {
+/** Strips non-hex characters and uppercases, so "01a2-B3.." / "01A2b3.." compare equal. */
+function normalizeBeaconId(value: string): string {
+  return value.replace(/[^0-9a-fA-F]/g, "").toUpperCase();
+}
+
+export const studentBeacon = onRequest(async (request, response) => {
   setCorsHeaders(response);
 
   if (request.method === "OPTIONS") {
@@ -596,12 +601,60 @@ export const studentBeacon = onRequest((request, response) => {
     return;
   }
 
-  logger.info("Student beacon received", {
-    beaconId: body.beaconId,
-    structuredData: true,
-  });
+  const scannedBeaconId = body.beaconId;
+  const normalizedScanned = normalizeBeaconId(scannedBeaconId);
 
-  sendStatus(response, 200);
+  try {
+    // beaconIdの表記ゆれ(大文字小文字・ダッシュ有無)を吸収するため、
+    // Firestoreのwhereではなく取得後にメモリ上で正規化して比較する。
+    const teachersSnapshot = await db
+      .collection("users")
+      .where("role", "==", "teacher")
+      .get();
+
+    const matchedTeacher = teachersSnapshot.docs.find((doc) => {
+      const beaconId = doc.data().beaconId;
+      return (
+        isNonEmptyString(beaconId) &&
+        normalizeBeaconId(beaconId) === normalizedScanned
+      );
+    });
+
+    if (!matchedTeacher) {
+      logger.warn("Student beacon: no matching teacher", {
+        beaconId: scannedBeaconId,
+      });
+      response.status(404).json({
+        error: "このビーコンIDに対応する先生が見つかりません。",
+      });
+      return;
+    }
+
+    const teacherName = matchedTeacher.data().name ?? matchedTeacher.data().displayName ?? "";
+
+    await db.collection("beaconScans").add({
+      beaconId: scannedBeaconId,
+      teacherId: matchedTeacher.id,
+      teacherName,
+      location: body.location,
+      scannedAt: FieldValue.serverTimestamp(),
+    });
+
+    logger.info("Student beacon received and matched", {
+      beaconId: scannedBeaconId,
+      teacherId: matchedTeacher.id,
+      structuredData: true,
+    });
+
+    response.status(200).json({
+      message: "Beacon received.",
+      teacherId: matchedTeacher.id,
+      teacherName,
+    });
+  } catch (err) {
+    logger.error("Error processing student beacon", {error: err});
+    response.status(500).json({error: "Internal server error."});
+  }
 });
 
 export const studentAnswer = onRequest((request, response) => {
