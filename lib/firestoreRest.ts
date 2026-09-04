@@ -182,6 +182,28 @@ function fromFirestoreFields(
 
 export type FirestoreDoc = { id: string; data: Record<string, unknown> };
 
+export async function getDocument(
+  collectionName: string,
+  docId: string
+): Promise<FirestoreDoc | null> {
+  const token = await getAccessToken();
+  const url = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents/${collectionName}/${docId}`;
+
+  const response = await fetch(url, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+
+  if (response.status === 404) return null;
+  if (!response.ok) {
+    throw new Error(
+      `Failed to get ${collectionName}/${docId}: ${response.status} ${await response.text()}`
+    );
+  }
+
+  const doc = (await response.json()) as { name: string; fields?: Record<string, FirestoreValue> };
+  return { id: docId, data: fromFirestoreFields(doc.fields ?? {}) };
+}
+
 export async function listCollection(collectionName: string): Promise<FirestoreDoc[]> {
   const token = await getAccessToken();
   const url = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents/${collectionName}`;

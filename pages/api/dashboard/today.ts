@@ -1,5 +1,6 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { listCollection } from "../../../lib/firestoreRest";
+import { requireTeacher } from "../../../lib/auth";
 
 function jstNow(): Date {
   const now = new Date();
@@ -39,6 +40,9 @@ function dailySessionDateString(value: unknown): string | null {
 }
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+  const uid = await requireTeacher(req, res);
+  if (!uid) return;
+
   const classId = typeof req.query.classId === "string" ? req.query.classId : null;
   const teacherId = typeof req.query.teacherId === "string" ? req.query.teacherId : null;
 

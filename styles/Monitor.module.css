@@ -73,6 +73,8 @@
   color: #111827;
   line-height: 1.25;
   max-width: 800px;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .instruction {

@@ -1,9 +1,13 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { listCollection } from "../../../lib/firestoreRest";
+import { requireTeacher } from "../../../lib/auth";
 
 const DAY_LABELS = ["", "月", "火", "水", "木", "金", "土", "日"];
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+  const uid = await requireTeacher(req, res);
+  if (!uid) return;
+
   try {
     const [classes, users, schedules, periods] = await Promise.all([
       listCollection("classes"),

@@ -5,6 +5,7 @@ import { useRouter } from 'next/router';
 import styles from '../styles/ScheduleDetail.module.css';
 import attendanceStyles from '../styles/Attendance.module.css';
 import UserProfileButton from '../components/UserProfileButton';
+import { authHeaders } from '../lib/clientAuth';
 
 
 function BellIcon() {
@@ -100,7 +101,7 @@ const ScheduleDetailPage: NextPage = () => {
 
   const loadTimetable = () => {
     setLoading(true);
-    fetch(`/api/timetable/detail?classId=${encodeURIComponent(classId)}`)
+    fetch(`/api/timetable/detail?classId=${encodeURIComponent(classId)}`, { headers: authHeaders() })
       .then((res) => res.json())
       .then((data) => {
         if (data.error) {
@@ -139,7 +140,7 @@ const ScheduleDetailPage: NextPage = () => {
   useEffect(loadTimetable, [classId]);
 
   useEffect(() => {
-    fetch('/api/teachers')
+    fetch('/api/teachers', { headers: authHeaders() })
       .then((res) => res.json())
       .then((data) => {
         if (data.error) return;
@@ -164,7 +165,7 @@ const ScheduleDetailPage: NextPage = () => {
     try {
       await fetch('/api/schedules', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
         body: JSON.stringify({
           classId,
           periodId: formPeriodId,
@@ -185,7 +186,7 @@ const ScheduleDetailPage: NextPage = () => {
   const handleDelete = async (scheduleId: string) => {
     if (!window.confirm('この授業をコマ表から削除しますか？')) return;
     try {
-      await fetch(`/api/schedules/${encodeURIComponent(scheduleId)}`, { method: 'DELETE' });
+      await fetch(`/api/schedules/${encodeURIComponent(scheduleId)}`, { method: 'DELETE', headers: authHeaders() });
       loadTimetable();
     } catch (err) {
       setError(String(err));

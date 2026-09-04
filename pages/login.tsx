@@ -1,9 +1,11 @@
-import { useState, type FormEvent } from "react";
+import { useState, type FormEvent, type ReactElement } from "react";
 import type { NextPage } from "next";
 import { useRouter } from "next/router";
 import styles from "../styles/Login.module.css";
 
-const LoginPage: NextPage = () => {
+type NextPageWithLayout = NextPage & { getLayout?: (page: ReactElement) => ReactElement };
+
+const LoginPage: NextPageWithLayout = () => {
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -74,7 +76,6 @@ const LoginPage: NextPage = () => {
               type="email"
               value={email}
               onChange={(event) => setEmail(event.target.value)}
-              placeholder="teacher001@example.com"
               required
             />
           </label>
@@ -85,7 +86,6 @@ const LoginPage: NextPage = () => {
               type="password"
               value={password}
               onChange={(event) => setPassword(event.target.value)}
-              placeholder="password123"
               required
             />
           </label>
@@ -100,5 +100,7 @@ const LoginPage: NextPage = () => {
     </div>
   );
 };
+
+LoginPage.getLayout = (page: ReactElement) => page;
 
 export default LoginPage;
