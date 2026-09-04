@@ -93,13 +93,20 @@ export async function requireTeacher(
     return null;
   }
 
-  // Seed/test users' Firestore doc IDs (e.g. "teacher-001") don't always match
-  // the Firebase Auth UID Identity Toolkit issued for them, so fall back to
-  // an email lookup when the direct uid lookup misses.
-  let userDoc = await getDocument("users", verified.uid);
-  if (!userDoc && verified.email) {
-    const users = await listCollection("users");
-    userDoc = users.find((u) => u.data.email === verified.email) ?? null;
+  let userDoc;
+  try {
+    // Seed/test users' Firestore doc IDs (e.g. "teacher-001") don't always
+    // match the Firebase Auth UID Identity Toolkit issued for them, so fall
+    // back to an email lookup when the direct uid lookup misses.
+    userDoc = await getDocument("users", verified.uid);
+    if (!userDoc && verified.email) {
+      const users = await listCollection("users");
+      userDoc = users.find((u) => u.data.email === verified.email) ?? null;
+    }
+  } catch (error) {
+    console.error("requireTeacher: Firestore lookup failed", error);
+    res.status(500).json({ error: "Failed to verify user." });
+    return null;
   }
 
   if (!userDoc || userDoc.data.role !== "teacher") {
