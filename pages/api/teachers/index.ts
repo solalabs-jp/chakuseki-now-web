@@ -1,7 +1,7 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { listCollection } from "../../../lib/firestoreRest";
 import { requireTeacher } from "../../../lib/auth";
-import { generateTempPassword, registerAuthUser } from "../../../lib/registerAuthUser";
+import { DEFAULT_PASSWORD, registerAuthUser } from "../../../lib/registerAuthUser";
 
 type TeacherInput = {
   name?: unknown;
@@ -58,7 +58,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     try {
       const result = await registerAuthUser({
         email: body.email,
-        password: generateTempPassword(),
+        password: DEFAULT_PASSWORD,
         role: "teacher",
         name: body.name,
         classId: isNonEmptyString(body.classId) ? body.classId : undefined,

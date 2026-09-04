@@ -51,11 +51,8 @@ export async function registerAuthUser(
   return { uid: data.uid as string };
 }
 
-/** Generates a random temporary password meeting Firebase Auth's min length. */
-export function generateTempPassword(): string {
-  return (
-    Math.random().toString(36).slice(2, 10) +
-    Math.random().toString(36).slice(2, 6).toUpperCase() +
-    "!1"
-  );
-}
+/**
+ * Fixed initial password for accounts created from the admin UI. No
+ * per-user password flow yet, so every new account gets the same value.
+ */
+export const DEFAULT_PASSWORD = "chakuseki2026";
