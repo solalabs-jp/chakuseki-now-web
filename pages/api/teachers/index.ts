@@ -2,6 +2,7 @@ import type { NextApiRequest, NextApiResponse } from "next";
 import { listCollection } from "../../../lib/firestoreRest";
 import { requireTeacher } from "../../../lib/auth";
 import { DEFAULT_PASSWORD, registerAuthUser } from "../../../lib/registerAuthUser";
+import { formatBeaconId } from "../../../lib/beaconId";
 
 type TeacherInput = {
   name?: unknown;
@@ -62,7 +63,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         role: "teacher",
         name: body.name,
         classId: isNonEmptyString(body.classId) ? body.classId : undefined,
-        beaconId: isNonEmptyString(body.beaconId) ? body.beaconId : undefined,
+        beaconId: isNonEmptyString(body.beaconId) ? formatBeaconId(body.beaconId) : undefined,
       });
       if ("error" in result) {
         res.status(result.status).json({ error: result.error });

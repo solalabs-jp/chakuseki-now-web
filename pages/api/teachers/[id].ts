@@ -1,6 +1,7 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { deleteDocument, upsertDocument } from "../../../lib/firestoreRest";
 import { requireTeacher } from "../../../lib/auth";
+import { formatBeaconId } from "../../../lib/beaconId";
 
 type TeacherInput = {
   name?: unknown;
@@ -47,7 +48,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   if (body.name !== undefined) update.name = body.name;
   if (body.email !== undefined) update.email = body.email;
   if (body.classId !== undefined) update.classId = body.classId;
-  if (body.beaconId !== undefined) update.beaconId = body.beaconId;
+  if (body.beaconId !== undefined) {
+    update.beaconId = isNonEmptyString(body.beaconId) ? formatBeaconId(body.beaconId) : "";
+  }
 
   if (Object.keys(update).length === 0) {
     res.status(400).json({ error: "No fields to update." });
