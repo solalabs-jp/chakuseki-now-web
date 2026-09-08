@@ -1,5 +1,7 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { listCollection } from "../../../lib/firestoreRest";
+import { jstDateString, dailySessionDateString } from "../../../lib/dateUtils";
+import { mapStatus, ATTENDED_STATUSES } from "../../../lib/statusUtils";
 
 function getJstNowParts() {
   const now = new Date();
@@ -17,27 +19,6 @@ function getJstNowParts() {
   const minute = parseInt(minuteStr, 10);
 
   return { hour, minute };
-}
-
-function jstDateString(): string {
-  return new Date().toLocaleDateString("sv-SE", { timeZone: "Asia/Tokyo" });
-}
-
-function dailySessionDateString(value: unknown): string | null {
-  if (typeof value !== "string") return null;
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return null;
-  return date.toLocaleDateString("sv-SE", { timeZone: "Asia/Tokyo" });
-}
-
-const ATTENDED_STATUSES = new Set(["present", "late", "early_leave", "mid_absence"]);
-
-function mapStatus(status: string): '出席' | '欠席' | '遅刻' | '遅刻15m' | '–' {
-  if (status === 'present') return '出席';
-  if (status === 'late') return '遅刻';
-  if (status === 'absent') return '欠席';
-  if (status === 'early_leave' || status === 'mid_absence') return '出席'; // fallback
-  return '–';
 }
 
 function initialsFromName(name: string): string {
@@ -78,7 +59,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const classDailySessionIds = new Set(classDailySessions.map((ds) => ds.id));
     const classSessions = sessions.filter((s) => classDailySessionIds.has(String(s.data.dailySessionsId ?? s.data.daily_sessionsId)));
     const classSessionIds = new Set(classSessions.map((s) => s.id));
-    const totalSessionsCount = classSessionIds.size;
 
     // 4. Today's sessions mapped by period
     const periodsById = new Map(periods.map((p) => [p.id, p.data]));
@@ -161,13 +141,16 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         if (!sessionIds || sessionIds.size === 0) return '–';
         
         const startMinutes = periodNumToStartMinutes.get(pNum);
-        if (startMinutes !== undefined && startMinutes !== null && nowMinutes < startMinutes) {
-          return '–';
-        }
 
         const record = studentRecords.find(r => sessionIds.has(String(r.data.sessionId)));
-        if (!record) return '欠席'; // No record means absent if session exists
-        return mapStatus(String(record.data.status));
+        if (record) {
+          return mapStatus(String(record.data.status));
+        }
+
+        if (startMinutes !== undefined && startMinutes !== null && nowMinutes >= startMinutes) {
+          return '欠席';
+        }
+        return '–';
       };
 
       return {
