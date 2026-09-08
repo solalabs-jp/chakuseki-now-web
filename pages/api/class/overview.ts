@@ -118,8 +118,17 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const jstParts = getJstNowParts();
     const nowMinutes = jstParts.hour * 60 + jstParts.minute;
 
+    const recordsByUserId = new Map<string, typeof attendanceRecords>();
+    for (const record of attendanceRecords) {
+      const uId = String(record.data.userId);
+      if (!recordsByUserId.has(uId)) {
+        recordsByUserId.set(uId, []);
+      }
+      recordsByUserId.get(uId)!.push(record);
+    }
+
     const studentsData = classStudents.map((student, i) => {
-      const studentRecords = attendanceRecords.filter(r => String(r.data.userId) === student.id);
+      const studentRecords = recordsByUserId.get(student.id) || [];
       const classRecords = studentRecords.filter(r => classSessionIds.has(String(r.data.sessionId)));
 
       const attendedSessionIds = new Set(
