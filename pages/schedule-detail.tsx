@@ -163,7 +163,7 @@ const ScheduleDetailPage: NextPage = () => {
     if (!formPeriodId || !formSubject.trim() || !formTeacherId) return;
     setSaving(true);
     try {
-      await fetch('/api/schedules', {
+      const res = await fetch('/api/schedules', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authHeaders() },
         body: JSON.stringify({
@@ -174,6 +174,13 @@ const ScheduleDetailPage: NextPage = () => {
           defaultTeacherId: formTeacherId,
         }),
       });
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setError(data.error ?? `保存に失敗しました (${res.status})`);
+        return;
+      }
+
       closeForm();
       loadTimetable();
     } catch (err) {
@@ -186,7 +193,17 @@ const ScheduleDetailPage: NextPage = () => {
   const handleDelete = async (scheduleId: string) => {
     if (!window.confirm('この授業をコマ表から削除しますか？')) return;
     try {
-      await fetch(`/api/schedules/${encodeURIComponent(scheduleId)}`, { method: 'DELETE', headers: authHeaders() });
+      const res = await fetch(`/api/schedules/${encodeURIComponent(scheduleId)}`, {
+        method: 'DELETE',
+        headers: authHeaders(),
+      });
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setError(data.error ?? `削除に失敗しました (${res.status})`);
+        return;
+      }
+
       loadTimetable();
     } catch (err) {
       setError(String(err));

@@ -119,19 +119,24 @@ const TeachersPage: NextPage = () => {
   const handleSave = async () => {
     setSaving(true);
     try {
-      if (editingId) {
-        await fetch(`/api/teachers/${encodeURIComponent(editingId)}`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json', ...authHeaders() },
-          body: JSON.stringify(form),
-        });
-      } else {
-        await fetch('/api/teachers', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', ...authHeaders() },
-          body: JSON.stringify(form),
-        });
+      const res = editingId
+        ? await fetch(`/api/teachers/${encodeURIComponent(editingId)}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json', ...authHeaders() },
+            body: JSON.stringify(form),
+          })
+        : await fetch('/api/teachers', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', ...authHeaders() },
+            body: JSON.stringify(form),
+          });
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setError(data.error ?? `保存に失敗しました (${res.status})`);
+        return;
       }
+
       closePanel();
       loadTeachers();
     } catch (err) {
@@ -146,7 +151,17 @@ const TeachersPage: NextPage = () => {
       return;
     }
     try {
-      await fetch(`/api/teachers/${encodeURIComponent(teacher.id)}`, { method: 'DELETE', headers: authHeaders() });
+      const res = await fetch(`/api/teachers/${encodeURIComponent(teacher.id)}`, {
+        method: 'DELETE',
+        headers: authHeaders(),
+      });
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setError(data.error ?? `削除に失敗しました (${res.status})`);
+        return;
+      }
+
       loadTeachers();
     } catch (err) {
       setError(String(err));
