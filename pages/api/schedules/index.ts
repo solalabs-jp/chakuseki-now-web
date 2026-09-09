@@ -43,7 +43,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 
   try {
-    const id = `schedule-${Date.now()}`;
+    const id = `schedule-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     await upsertDocument("schedules", id, {
       classId: body.classId,
       periodId: body.periodId,
