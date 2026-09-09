@@ -67,6 +67,10 @@ type RegisterRequestBody = {
   beaconId?: unknown;
 };
 
+type DeleteUserRequestBody = {
+  uid?: unknown;
+};
+
 type CreateCheckinQuestionRequestBody = {
   sessionId?: unknown;
   teacherId?: unknown;
@@ -461,6 +465,71 @@ export const registerUser = onRequest(async (request, response) => {
     } else {
       response.status(500).json({ error: "Internal server error." });
     }
+  }
+});
+
+/**
+ * POST /api/auth/delete-user
+ * Body: { uid: string }
+ * Response: { message: string }
+ *
+ * registerUserと対になる削除処理。Firebase Authアカウントと
+ * Firestoreのusersドキュメントの両方を削除する。
+ */
+export const deleteUser = onRequest(async (request, response) => {
+  setCorsHeaders(response);
+
+  if (request.method === "OPTIONS") {
+    response.status(204).send("");
+    return;
+  }
+
+  if (request.method === "GET") {
+    response.status(200).json({
+      message: "POST uid to delete the user.",
+      method: "POST",
+      path: "/api/auth/delete-user",
+      body: { uid: "abc123" },
+    });
+    return;
+  }
+
+  if (request.method !== "POST") {
+    response.set("Allow", "GET, POST, OPTIONS");
+    sendStatus(response, 405);
+    return;
+  }
+
+  const body = (request.body ?? {}) as DeleteUserRequestBody;
+
+  if (!isNonEmptyString(body.uid)) {
+    response.status(400).json({ error: "uid is required." });
+    return;
+  }
+
+  try {
+    // Authアカウントが既に存在しない場合はエラーにせず、Firestore側の
+    // 削除だけ進める(整合性を取り戻す操作として許容する)。
+    try {
+      await admin.auth().deleteUser(body.uid);
+    } catch (err: unknown) {
+      const errObj = err as Record<string, unknown>;
+      if (String(errObj?.code) !== "auth/user-not-found") {
+        throw err;
+      }
+    }
+
+    await db.collection("users").doc(body.uid).delete();
+
+    logger.info("User deleted successfully", {
+      uid: body.uid,
+      structuredData: true,
+    });
+
+    response.status(200).json({ message: "User deleted successfully." });
+  } catch (err: unknown) {
+    logger.error("Error deleting user", { error: err });
+    response.status(500).json({ error: "Internal server error." });
   }
 });
 

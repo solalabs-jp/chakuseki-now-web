@@ -1,7 +1,8 @@
 import type { NextApiRequest, NextApiResponse } from "next";
-import { deleteDocument, upsertDocument } from "../../../lib/firestoreRest";
+import { upsertDocument } from "../../../lib/firestoreRest";
 import { requireTeacher } from "../../../lib/auth";
 import { formatBeaconId } from "../../../lib/beaconId";
+import { deleteAuthUser } from "../../../lib/registerAuthUser";
 
 type TeacherInput = {
   name?: unknown;
@@ -27,7 +28,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   if (req.method === "DELETE") {
     try {
-      await deleteDocument("users", id);
+      const result = await deleteAuthUser(id);
+      if ("error" in result) {
+        res.status(result.status).json({ error: result.error });
+        return;
+      }
       res.status(200).json({ id });
     } catch (error) {
       console.error("teachers DELETE error", error);

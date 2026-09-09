@@ -11,6 +11,10 @@ const REGISTER_URL = useEmulator
   ? `http://127.0.0.1:5001/${PROJECT_ID}/us-central1/registerUser`
   : `https://us-central1-${PROJECT_ID}.cloudfunctions.net/registerUser`;
 
+const DELETE_USER_URL = useEmulator
+  ? `http://127.0.0.1:5001/${PROJECT_ID}/us-central1/deleteUser`
+  : `https://us-central1-${PROJECT_ID}.cloudfunctions.net/deleteUser`;
+
 type RegisterAuthUserInput = {
   email: string;
   password: string;
@@ -56,3 +60,30 @@ export async function registerAuthUser(
  * per-user password flow yet, so every new account gets the same value.
  */
 export const DEFAULT_PASSWORD = "chakuseki2026";
+
+type DeleteAuthUserResult = { ok: true } | { error: string; status: number };
+
+/**
+ * Deletes both the Firebase Auth account and the Firestore users/{uid} doc
+ * (via the deleteUser Cloud Function), so removing a teacher doesn't leave
+ * a stranded Auth account that can still log in / blocks re-registering the
+ * same email.
+ */
+export async function deleteAuthUser(uid: string): Promise<DeleteAuthUserResult> {
+  const response = await fetch(DELETE_USER_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ uid }),
+  });
+
+  const data = await response.json().catch(() => ({}));
+
+  if (!response.ok) {
+    return {
+      error: typeof data.error === "string" ? data.error : "Failed to delete user.",
+      status: response.status,
+    };
+  }
+
+  return { ok: true };
+}
