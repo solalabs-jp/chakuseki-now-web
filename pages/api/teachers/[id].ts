@@ -1,8 +1,7 @@
 import type { NextApiRequest, NextApiResponse } from "next";
-import { upsertDocument } from "../../../lib/firestoreRest";
 import { requireTeacher } from "../../../lib/auth";
 import { formatBeaconId } from "../../../lib/beaconId";
-import { deleteAuthUser } from "../../../lib/registerAuthUser";
+import { deleteAuthUser, updateAuthUser } from "../../../lib/registerAuthUser";
 
 type TeacherInput = {
   name?: unknown;
@@ -48,22 +47,45 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 
   const body = (req.body ?? {}) as TeacherInput;
-  const update: Record<string, unknown> = {};
 
-  if (body.name !== undefined) update.name = body.name;
-  if (body.email !== undefined) update.email = body.email;
-  if (body.classId !== undefined) update.classId = body.classId;
-  if (body.beaconId !== undefined) {
-    update.beaconId = isNonEmptyString(body.beaconId) ? formatBeaconId(body.beaconId) : "";
+  if (body.email !== undefined && !isNonEmptyString(body.email)) {
+    res.status(400).json({ error: "email cannot be empty." });
+    return;
   }
 
-  if (Object.keys(update).length === 0) {
+  const update: { uid: string; name?: string; email?: string; classId?: string; beaconId?: string } = {
+    uid: id,
+  };
+  let hasUpdate = false;
+
+  if (body.name !== undefined) {
+    update.name = String(body.name);
+    hasUpdate = true;
+  }
+  if (body.email !== undefined) {
+    update.email = String(body.email);
+    hasUpdate = true;
+  }
+  if (body.classId !== undefined) {
+    update.classId = String(body.classId);
+    hasUpdate = true;
+  }
+  if (body.beaconId !== undefined) {
+    update.beaconId = isNonEmptyString(body.beaconId) ? formatBeaconId(body.beaconId) : "";
+    hasUpdate = true;
+  }
+
+  if (!hasUpdate) {
     res.status(400).json({ error: "No fields to update." });
     return;
   }
 
   try {
-    await upsertDocument("users", id, update);
+    const result = await updateAuthUser(update);
+    if ("error" in result) {
+      res.status(result.status).json({ error: result.error });
+      return;
+    }
     res.status(200).json({ id });
   } catch (error) {
     console.error("teachers PATCH error", error);

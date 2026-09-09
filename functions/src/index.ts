@@ -71,6 +71,14 @@ type DeleteUserRequestBody = {
   uid?: unknown;
 };
 
+type UpdateUserRequestBody = {
+  uid?: unknown;
+  email?: unknown;
+  name?: unknown;
+  classId?: unknown;
+  beaconId?: unknown;
+};
+
 type CreateCheckinQuestionRequestBody = {
   sessionId?: unknown;
   teacherId?: unknown;
@@ -530,6 +538,84 @@ export const deleteUser = onRequest(async (request, response) => {
   } catch (err: unknown) {
     logger.error("Error deleting user", { error: err });
     response.status(500).json({ error: "Internal server error." });
+  }
+});
+
+/**
+ * POST /api/auth/update-user
+ * Body: { uid: string, email?: string, name?: string, classId?: string, beaconId?: string }
+ * Response: { message: string }
+ *
+ * emailが渡された場合はFirebase Authのメールも更新し、Firestoreの
+ * usersドキュメントとの乖離を防ぐ。他のフィールドはFirestoreのみ更新。
+ */
+export const updateUser = onRequest(async (request, response) => {
+  setCorsHeaders(response);
+
+  if (request.method === "OPTIONS") {
+    response.status(204).send("");
+    return;
+  }
+
+  if (request.method === "GET") {
+    response.status(200).json({
+      message: "POST uid and the fields to update.",
+      method: "POST",
+      path: "/api/auth/update-user",
+      body: { uid: "abc123", email: "new@example.com", name: "山田 太郎" },
+    });
+    return;
+  }
+
+  if (request.method !== "POST") {
+    response.set("Allow", "GET, POST, OPTIONS");
+    sendStatus(response, 405);
+    return;
+  }
+
+  const body = (request.body ?? {}) as UpdateUserRequestBody;
+
+  if (!isNonEmptyString(body.uid)) {
+    response.status(400).json({ error: "uid is required." });
+    return;
+  }
+
+  if (body.email !== undefined && !isNonEmptyString(body.email)) {
+    response.status(400).json({ error: "email cannot be empty." });
+    return;
+  }
+
+  try {
+    if (isNonEmptyString(body.email)) {
+      await admin.auth().updateUser(body.uid, { email: body.email });
+    }
+
+    const update: Record<string, unknown> = {};
+    if (isNonEmptyString(body.email)) update.email = body.email;
+    if (body.name !== undefined) update.name = body.name;
+    if (body.classId !== undefined) update.classId = body.classId;
+    if (body.beaconId !== undefined) update.beaconId = body.beaconId;
+
+    if (Object.keys(update).length > 0) {
+      await db.collection("users").doc(body.uid).set(update, { merge: true });
+    }
+
+    logger.info("User updated successfully", {
+      uid: body.uid,
+      structuredData: true,
+    });
+
+    response.status(200).json({ message: "User updated successfully." });
+  } catch (err: unknown) {
+    const errObj = err as Record<string, unknown>;
+    logger.error("Error updating user", { error: errObj });
+    if (String(errObj?.code) === "auth/email-already-exists") {
+      response.status(409).json({ error: "Email already exists." });
+    } else if (String(errObj?.code) === "auth/user-not-found") {
+      response.status(404).json({ error: "User not found." });
+    } else {
+      response.status(500).json({ error: "Internal server error." });
+    }
   }
 });
 

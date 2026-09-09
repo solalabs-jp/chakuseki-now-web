@@ -15,6 +15,10 @@ const DELETE_USER_URL = useEmulator
   ? `http://127.0.0.1:5001/${PROJECT_ID}/us-central1/deleteUser`
   : `https://us-central1-${PROJECT_ID}.cloudfunctions.net/deleteUser`;
 
+const UPDATE_USER_URL = useEmulator
+  ? `http://127.0.0.1:5001/${PROJECT_ID}/us-central1/updateUser`
+  : `https://us-central1-${PROJECT_ID}.cloudfunctions.net/updateUser`;
+
 type RegisterAuthUserInput = {
   email: string;
   password: string;
@@ -81,6 +85,40 @@ export async function deleteAuthUser(uid: string): Promise<DeleteAuthUserResult>
   if (!response.ok) {
     return {
       error: typeof data.error === "string" ? data.error : "Failed to delete user.",
+      status: response.status,
+    };
+  }
+
+  return { ok: true };
+}
+
+type UpdateAuthUserInput = {
+  uid: string;
+  email?: string;
+  name?: string;
+  classId?: string;
+  beaconId?: string;
+};
+
+type UpdateAuthUserResult = { ok: true } | { error: string; status: number };
+
+/**
+ * Updates a teacher's profile fields. When email is included, it's applied
+ * to the Firebase Auth account too (via the updateUser Cloud Function) so
+ * Firestore and the account used to actually log in never diverge.
+ */
+export async function updateAuthUser(input: UpdateAuthUserInput): Promise<UpdateAuthUserResult> {
+  const response = await fetch(UPDATE_USER_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+
+  const data = await response.json().catch(() => ({}));
+
+  if (!response.ok) {
+    return {
+      error: typeof data.error === "string" ? data.error : "Failed to update user.",
       status: response.status,
     };
   }
