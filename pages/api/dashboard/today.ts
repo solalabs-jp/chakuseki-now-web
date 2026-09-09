@@ -19,15 +19,13 @@ function getJstNowParts() {
 
   const hour = parseInt(hourStr, 10) % 24;
   const minute = parseInt(minuteStr, 10);
-  const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-  const dayOfWeek = Math.max(0, days.indexOf(weekdayStr));
+  
+  // Firestore convention: 1=Mon, 2=Tue, ..., 7=Sun
+  const days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+  let dayOfWeek = days.indexOf(weekdayStr) + 1;
+  if (dayOfWeek === 0) dayOfWeek = 7; // Fallback to Sun if not found
 
   return { hour, minute, dayOfWeek };
-}
-
-// Firestore's dayOfWeek convention: 1=月...7=日. JS Date#getDay(): 0=日...6=土.
-function toScheduleDayOfWeek(jsDay: number): number {
-  return jsDay === 0 ? 7 : jsDay;
 }
 
 function hhmmToMinutes(value: unknown): number | null {
@@ -62,7 +60,7 @@ function formatHhmm(value: unknown): string {
 
       const jstParts = getJstNowParts();
       const nowMinutes = jstParts.hour * 60 + jstParts.minute;
-      const todayScheduleDay = toScheduleDayOfWeek(jstParts.dayOfWeek);
+      const todayScheduleDay = jstParts.dayOfWeek;
       const today = jstDateString();
 
       const periodsById = new Map(periods.map((p) => [p.id, p.data]));
@@ -71,8 +69,8 @@ function formatHhmm(value: unknown): string {
       const rosterCountByClassId = new Map<string, number>();
       for (const u of users) {
         if (u.data.role !== "student") continue;
-        const classId = String(u.data.classId ?? "");
-        rosterCountByClassId.set(classId, (rosterCountByClassId.get(classId) ?? 0) + 1);
+        const userClassId = String(u.data.classId ?? "");
+        rosterCountByClassId.set(userClassId, (rosterCountByClassId.get(userClassId) ?? 0) + 1);
       }
 
       const todaysSchedules = schedules.filter((s) => {
@@ -100,7 +98,7 @@ function formatHhmm(value: unknown): string {
           if (dailySession) {
             const sessionIds = new Set(
               sessions
-                .filter((s) => s.data.dailySessionsId === dailySession.id || s.data.daily_sessionsId === dailySession.id)
+                .filter((s) => (s.data.dailySessionsId ?? s.data.daily_sessionsId) === dailySession.id)
                 .map((s) => s.id)
             );
             attended = attendanceRecords.filter(
