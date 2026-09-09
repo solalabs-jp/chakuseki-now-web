@@ -2,6 +2,7 @@ import type { NextApiRequest, NextApiResponse } from "next";
 import { listCollection } from "../../../lib/firestoreRest";
 import { jstDateString, dailySessionDateString } from "../../../lib/dateUtils";
 import { mapStatus, ATTENDED_STATUSES } from "../../../lib/statusUtils";
+import { requireTeacher } from "../../../lib/auth";
 
 function getJstNowParts() {
   const now = new Date();
@@ -32,6 +33,9 @@ function initialsFromName(name: string): string {
 const AVATAR_COLORS = ['#3b82f6', '#7c3aed', '#ec4899', '#10b981', '#f59e0b', '#0ea5e9', '#1d4ed8', '#dc2626', '#b45309', '#6b7280'];
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+  const uid = await requireTeacher(req, res);
+  if (!uid) return;
+
   const classId = typeof req.query.classId === "string" ? req.query.classId : "class-2A";
 
   try {

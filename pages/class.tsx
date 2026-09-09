@@ -3,7 +3,7 @@ import { useRouter } from 'next/router';
 import { useState, useEffect } from 'react';
 import styles from '../styles/Class.module.css';
 import UserProfileButton from '../components/UserProfileButton';
-
+import { authHeaders } from '../lib/clientAuth';
 
 function BellIcon() {
   return (
@@ -82,7 +82,7 @@ function StatusBadge({ status }: { status: StatusType }) {
     '遅刻15m': { label: '遅刻 15m', bg: '#fef3c7', color: '#d97706' },
     '–': { label: '–', bg: 'transparent', color: '#9ca3af' },
   };
-  const s = map[status];
+  const s = map[status] ?? map['–'];
   return (
     <span
       className={styles.statusBadge}
@@ -105,7 +105,7 @@ const ClassPage: NextPage = () => {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   useEffect(() => {
-    fetch('/api/class/overview?classId=class-2A')
+    fetch('/api/class/overview?classId=class-2A', { headers: authHeaders() })
       .then(res => res.json())
       .then(data => {
         if (data.error) {
