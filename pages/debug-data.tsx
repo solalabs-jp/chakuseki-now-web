@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import type { NextPage } from "next";
+import { authHeaders } from "../lib/clientAuth";
 
 type AttendanceRow = {
   recordId: string;
@@ -16,7 +17,7 @@ const DebugDataPage: NextPage = () => {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    fetch("/api/debug/data")
+    fetch("/api/debug/data", { headers: authHeaders() })
       .then((res) => res.json())
       .then((data) => {
         if (data.error) {

@@ -1,9 +1,13 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { listCollection } from "../../../lib/firestoreRest";
+import { requireTeacher } from "../../../lib/auth";
 
 import { STATUS_LABELS } from "../../../lib/statusUtils";
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+  const uid = await requireTeacher(req, res);
+  if (!uid) return;
+
   try {
     const [
       users,
