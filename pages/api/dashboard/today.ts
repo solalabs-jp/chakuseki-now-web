@@ -1,20 +1,32 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { listCollection } from "../../../lib/firestoreRest";
+import { jstDateString, dailySessionDateString } from "../../../lib/dateUtils";
+import { ATTENDED_STATUSES } from "../../../lib/statusUtils";
 import { requireTeacher } from "../../../lib/auth";
 
-function jstNow(): Date {
+function getJstNowParts() {
   const now = new Date();
-  const jstString = now.toLocaleString("en-US", { timeZone: "Asia/Tokyo" });
-  return new Date(jstString);
-}
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Tokyo",
+    hour12: false,
+    hour: "numeric",
+    minute: "numeric",
+    weekday: "short",
+  }).formatToParts(now);
 
-function jstDateString(): string {
-  return new Date().toLocaleDateString("sv-SE", { timeZone: "Asia/Tokyo" });
-}
+  const hourStr = parts.find((p) => p.type === "hour")?.value || "0";
+  const minuteStr = parts.find((p) => p.type === "minute")?.value || "0";
+  const weekdayStr = parts.find((p) => p.type === "weekday")?.value || "Sun";
 
-// Firestore's dayOfWeek convention: 1=月...7=日. JS Date#getDay(): 0=日...6=土.
-function toScheduleDayOfWeek(jsDay: number): number {
-  return jsDay === 0 ? 7 : jsDay;
+  const hour = parseInt(hourStr, 10) % 24;
+  const minute = parseInt(minuteStr, 10);
+  
+  // Firestore convention: 1=Mon, 2=Tue, ..., 7=Sun
+  const days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+  let dayOfWeek = days.indexOf(weekdayStr) + 1;
+  if (dayOfWeek === 0) dayOfWeek = 7; // Fallback to Sun if not found
+
+  return { hour, minute, dayOfWeek };
 }
 
 function hhmmToMinutes(value: unknown): number | null {
@@ -30,14 +42,6 @@ function formatHhmm(value: unknown): string {
   return `${padded.slice(0, 2)}:${padded.slice(2)}`;
 }
 
-const ATTENDED_STATUSES = new Set(["present", "late", "early_leave", "mid_absence"]);
-
-function dailySessionDateString(value: unknown): string | null {
-  if (typeof value !== "string") return null;
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return null;
-  return date.toLocaleDateString("sv-SE", { timeZone: "Asia/Tokyo" });
-}
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   const uid = await requireTeacher(req, res);
@@ -58,9 +62,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         listCollection("attendanceRecords"),
       ]);
 
-    const now = jstNow();
-    const nowMinutes = now.getHours() * 60 + now.getMinutes();
-    const todayScheduleDay = toScheduleDayOfWeek(now.getDay());
+    const jstParts = getJstNowParts();
+    const nowMinutes = jstParts.hour * 60 + jstParts.minute;
+    const todayScheduleDay = jstParts.dayOfWeek;
     const today = jstDateString();
 
     const periodsById = new Map(periods.map((p) => [p.id, p.data]));
@@ -69,8 +73,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const rosterCountByClassId = new Map<string, number>();
     for (const u of users) {
       if (u.data.role !== "student") continue;
-      const classId = String(u.data.classId ?? "");
-      rosterCountByClassId.set(classId, (rosterCountByClassId.get(classId) ?? 0) + 1);
+      const userClassId = String(u.data.classId ?? "");
+      rosterCountByClassId.set(userClassId, (rosterCountByClassId.get(userClassId) ?? 0) + 1);
     }
 
     const todaysSchedules = schedules.filter((s) => {

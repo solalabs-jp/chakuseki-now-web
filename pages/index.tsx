@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
 import type { NextPage } from 'next';
-import Link from 'next/link';
 import { useRouter } from 'next/router';
 import styles from '../styles/Home.module.css';
 import scheduleStyles from '../styles/Schedule.module.css';
@@ -179,6 +178,11 @@ const Home: NextPage = () => {
             key={item.scheduleId}
             ref={item.scheduleId === highlightedScheduleId ? currentRowRef : undefined}
             className={`${styles.scheduleRow} ${styles[`row_${item.status}`]}`}
+            onClick={() => {
+              if (item.status === 'current') {
+                router.push('/attendance');
+              }
+            }}
           >
             <div className={styles.rowLeft}>
               <span className={`${styles.badge} ${styles[`badge_${item.status}`]}`}>
@@ -209,7 +213,6 @@ const Home: NextPage = () => {
                     <span className={styles.percentBadge}>{item.percent}%以上</span>
                   </div>
                   <div className={styles.bar}><div className={styles.barFill} style={{ width: `${item.percent}%`, background: '#dc2626' }} /></div>
-                  <Link href="/attendance" className={styles.detailBtn}>詳細を見る</Link>
                 </>
               ) : (
                 <>
