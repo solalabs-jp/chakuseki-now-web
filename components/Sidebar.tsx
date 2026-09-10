@@ -74,8 +74,14 @@ const navItems = [
   },
   {
     label: '生徒・クラス管理',
+    href: '/promotion',
+    activeFor: ['/promotion'],
+    icon: <UsersIcon />,
+  },
+  {
+    label: '教員・BLE管理',
     href: '/teachers',
-    activeFor: ['/promotion', '/teachers'],
+    activeFor: ['/teachers'],
     icon: <UsersIcon />,
   },
   {
