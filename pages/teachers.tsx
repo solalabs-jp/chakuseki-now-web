@@ -310,8 +310,7 @@ const TeachersPage: NextPage = () => {
             <div className={styles.userPanelBody}>
               <label className={styles.fieldLabel}>氏名</label>
               <input
-                className={styles.searchInput}
-                style={{ width: '100%', border: '1px solid #e5e7eb', borderRadius: 8, padding: '8px 10px' }}
+                className={styles.formInput}
                 value={form.name}
                 onChange={(e) => setForm({ ...form, name: e.target.value })}
                 placeholder="例: 根本 康太"
@@ -319,8 +318,7 @@ const TeachersPage: NextPage = () => {
 
               <label className={styles.fieldLabel}>メールアドレス</label>
               <input
-                className={styles.searchInput}
-                style={{ width: '100%', border: '1px solid #e5e7eb', borderRadius: 8, padding: '8px 10px' }}
+                className={styles.formInput}
                 value={form.email}
                 onChange={(e) => setForm({ ...form, email: e.target.value })}
                 placeholder="teacher001@example.com"
@@ -328,8 +326,7 @@ const TeachersPage: NextPage = () => {
 
               <label className={styles.fieldLabel}>担任クラス</label>
               <select
-                className={styles.searchInput}
-                style={{ width: '100%', border: '1px solid #e5e7eb', borderRadius: 8, padding: '8px 10px' }}
+                className={styles.formInput}
                 value={form.classId}
                 onChange={(e) => setForm({ ...form, classId: e.target.value })}
               >
@@ -341,8 +338,7 @@ const TeachersPage: NextPage = () => {
 
               <label className={styles.fieldLabel}>BLEビーコンID</label>
               <input
-                className={styles.searchInput}
-                style={{ width: '100%', border: '1px solid #e5e7eb', borderRadius: 8, padding: '8px 10px' }}
+                className={styles.formInput}
                 value={form.beaconId}
                 onChange={(e) => setForm({ ...form, beaconId: formatBeaconId(e.target.value) })}
                 placeholder="01020304-0506-0708-090A-0B0C0D0E0F10"

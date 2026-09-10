@@ -306,8 +306,7 @@ const ScheduleDetailPage: NextPage = () => {
             <div className={attendanceStyles.userPanelBody}>
               <label className={attendanceStyles.fieldLabel}>曜日</label>
               <select
-                className={attendanceStyles.searchInput}
-                style={{ width: '100%', border: '1px solid #e5e7eb', borderRadius: 8, padding: '8px 10px' }}
+                className={attendanceStyles.formInput}
                 value={formDayIdx}
                 onChange={(e) => setFormDayIdx(Number(e.target.value))}
               >
@@ -318,8 +317,7 @@ const ScheduleDetailPage: NextPage = () => {
 
               <label className={attendanceStyles.fieldLabel}>時限</label>
               <select
-                className={attendanceStyles.searchInput}
-                style={{ width: '100%', border: '1px solid #e5e7eb', borderRadius: 8, padding: '8px 10px' }}
+                className={attendanceStyles.formInput}
                 value={formPeriodId}
                 onChange={(e) => setFormPeriodId(e.target.value)}
               >
@@ -330,8 +328,7 @@ const ScheduleDetailPage: NextPage = () => {
 
               <label className={attendanceStyles.fieldLabel}>科目名</label>
               <input
-                className={attendanceStyles.searchInput}
-                style={{ width: '100%', border: '1px solid #e5e7eb', borderRadius: 8, padding: '8px 10px' }}
+                className={attendanceStyles.formInput}
                 value={formSubject}
                 onChange={(e) => setFormSubject(e.target.value)}
                 placeholder="例: ITマネジメント"
@@ -339,8 +336,7 @@ const ScheduleDetailPage: NextPage = () => {
 
               <label className={attendanceStyles.fieldLabel}>担当教員</label>
               <select
-                className={attendanceStyles.searchInput}
-                style={{ width: '100%', border: '1px solid #e5e7eb', borderRadius: 8, padding: '8px 10px' }}
+                className={attendanceStyles.formInput}
                 value={formTeacherId}
                 onChange={(e) => setFormTeacherId(e.target.value)}
               >
