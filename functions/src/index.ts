@@ -1516,7 +1516,7 @@ export const generateDailySessions = onSchedule(
         const sessionData = {
           scheduleId,
           classId: scheduleData.classId,
-          teacherId: scheduleData.defaultTeacherId, // デフォルトの教師をコピー
+          teacherId: scheduleData.defaultTeacherId ?? scheduleData.teacherId, // デフォルトの教師をコピー(旧フィールドへのフォールバック)
           date: todayTimestamp,
           createdAt: FieldValue.serverTimestamp(),
         };
@@ -1652,7 +1652,7 @@ export const adminGenerateDailySessions = onRequest(async (
       const sessionData = {
         scheduleId,
         classId: scheduleData.classId,
-        teacherId: scheduleData.defaultTeacherId,
+        teacherId: scheduleData.defaultTeacherId ?? scheduleData.teacherId,
         date: todayTimestamp,
         createdAt: FieldValue.serverTimestamp(),
       };
