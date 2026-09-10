@@ -456,7 +456,14 @@ export const registerUser = onRequest(async (request, response) => {
     }
     userData.email = body.email;
 
-    await db.collection("users").doc(userRecord.uid).set(userData);
+    try {
+      await db.collection("users").doc(userRecord.uid).set(userData);
+    } catch (dbErr) {
+      // Firestore 書き込み失敗時は Auth アカウントを残さない(孤立防止)。
+      // 孤立すると同じメールでの再作成が常に409になり、UIから復旧できない。
+      await admin.auth().deleteUser(userRecord.uid).catch(() => undefined);
+      throw dbErr;
+    }
 
     logger.info("User registered successfully", {
       uid: userRecord.uid,
