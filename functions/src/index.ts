@@ -629,17 +629,26 @@ export const updateUser = onRequest(async (request, response) => {
       try {
         await admin.auth().updateUser(body.uid, { email: body.email });
       } catch (authErr: unknown) {
-        // Firestore の doc ID と Auth UID が一致しない旧データでは Auth
-        // ユーザーが見つからないことがある。その場合でも Firestore 側の
-        // 更新は進める。
         if (
           String((authErr as Record<string, unknown>)?.code) !==
           "auth/user-not-found"
         ) {
           throw authErr;
         }
-        logger.warn("updateUser: Auth user not found, updating Firestore only", {
-          uid: body.uid,
+        // doc ID と Auth UID が不一致の旧データ。Firestore に保存済みの
+        // 現メールアドレスから実 UID を解決し、Auth 側も必ず更新する。
+        // 解決できなければ Auth と Firestore が乖離して教員がログイン
+        // 不能になるため、更新せずエラーにする。
+        const snap = await db.collection("users").doc(body.uid).get();
+        const currentEmail = snap.data()?.email as string | undefined;
+        if (!isNonEmptyString(currentEmail)) {
+          throw authErr;
+        }
+        const authUser = await admin.auth().getUserByEmail(currentEmail);
+        await admin.auth().updateUser(authUser.uid, { email: body.email });
+        logger.warn("updateUser: resolved Auth UID via email for legacy doc", {
+          docId: body.uid,
+          authUid: authUser.uid,
         });
       }
     }
