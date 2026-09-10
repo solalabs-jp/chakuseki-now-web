@@ -1,5 +1,5 @@
 import type { NextApiRequest, NextApiResponse } from "next";
-import { listCollection, upsertDocument } from "../../../lib/firestoreRest";
+import { createDocument } from "../../../lib/firestoreRest";
 import { requireTeacher } from "../../../lib/auth";
 
 type ScheduleInput = {
@@ -12,6 +12,17 @@ type ScheduleInput = {
 
 function isNonEmptyString(value: unknown): value is string {
   return typeof value === "string" && value.trim().length > 0;
+}
+
+/**
+ * 同一コマ(classId + dayOfWeek + periodId)を表す決定的な doc ID を作る。
+ * createDocument の「既に存在すれば失敗する」性質と組み合わせることで、
+ * コレクション全体を読まずに重複登録を検知でき、同時作成による
+ * TOCTOU レース(2つのPOSTが両方「重複なし」と判定してしまう)も防げる。
+ */
+function scheduleDocId(classId: string, dayOfWeek: number, periodId: string): string {
+  const sanitize = (value: string) => value.replace(/[^A-Za-z0-9_-]/g, "_");
+  return `schedule-${sanitize(classId)}-${dayOfWeek}-${sanitize(periodId)}`;
 }
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
@@ -46,20 +57,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     // 同一コマ(classId + dayOfWeek + periodId)の重複登録を防ぐ。
     // 重複すると UI では片方しか描画されないが、日次セッション生成で
     // 同じコマに dailySessions が2件作られてしまう。
-    const existing = await listCollection("schedules");
-    const duplicate = existing.some(
-      (doc) =>
-        doc.data.classId === body.classId &&
-        Number(doc.data.dayOfWeek) === dayOfWeek &&
-        doc.data.periodId === body.periodId
-    );
-    if (duplicate) {
-      res.status(409).json({ error: "この曜日・時限には既に授業が登録されています。" });
-      return;
-    }
-
-    const id = `schedule-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-    await upsertDocument("schedules", id, {
+    const id = scheduleDocId(body.classId, dayOfWeek, body.periodId);
+    const result = await createDocument("schedules", id, {
       classId: body.classId,
       periodId: body.periodId,
       subjectName: body.subjectName,
@@ -67,6 +66,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       defaultTeacherId: body.defaultTeacherId,
       createdAt: new Date(),
     });
+
+    if (!result.created) {
+      res.status(409).json({ error: "この曜日・時限には既に授業が登録されています。" });
+      return;
+    }
+
     res.status(201).json({ id });
   } catch (error) {
     console.error("schedules POST error", error);

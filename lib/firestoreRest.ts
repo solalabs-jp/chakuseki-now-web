@@ -274,6 +274,44 @@ function toFirestoreFields(data: Record<string, unknown>): Record<string, Firest
 }
 
 /**
+ * 指定した docId でドキュメントを新規作成する。同じ docId のドキュメントが
+ * 既に存在する場合は Firestore 側が 409 (ALREADY_EXISTS) を返し、失敗する。
+ * upsertDocument(PATCH によるマージ)と異なりレース条件に強く、
+ * 「同じキーを持つドキュメントが同時に2つ作られる」ことを防ぎたい場面
+ * (例: 同一コマの重複登録防止)で使う。
+ */
+export async function createDocument(
+  collectionName: string,
+  docId: string,
+  data: Record<string, unknown>
+): Promise<{ created: true } | { created: false; alreadyExists: boolean }> {
+  const token = await getAccessToken();
+  const url = new URL(
+    `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents/${collectionName}`
+  );
+  url.searchParams.set("documentId", docId);
+
+  const response = await fetch(url, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ fields: toFirestoreFields(data) }),
+  });
+
+  if (response.status === 409) {
+    return { created: false, alreadyExists: true };
+  }
+  if (!response.ok) {
+    throw new Error(
+      `Failed to create ${collectionName}/${docId}: ${response.status} ${await response.text()}`
+    );
+  }
+  return { created: true };
+}
+
+/**
  * Merge-writes the given fields into a document, creating it if it doesn't
  * exist yet. Fields not included in `data` are left untouched.
  */
