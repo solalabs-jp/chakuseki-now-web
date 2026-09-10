@@ -1,9 +1,16 @@
 import type { NextApiRequest, NextApiResponse } from "next";
-import { deleteDocument } from "../../../lib/firestoreRest";
+import { deleteDocument, listCollection } from "../../../lib/firestoreRest";
 import { requireTeacher } from "../../../lib/auth";
 
 function isNonEmptyString(value: unknown): value is string {
   return typeof value === "string" && value.trim().length > 0;
+}
+
+/** JST の本日 0:00 を UTC ミリ秒で返す。 */
+function startOfTodayJstMs(): number {
+  const todayStr = new Date().toLocaleDateString("sv-SE", { timeZone: "Asia/Tokyo" });
+  const [y, m, d] = todayStr.split("-").map(Number);
+  return Date.UTC(y, m - 1, d) - 9 * 60 * 60 * 1000;
 }
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
@@ -24,6 +31,24 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 
   try {
+    // この schedule から生成済みの dailySessions を物理削除で孤児化させない。
+    // 当日以降の dailySessions が残っている場合は削除を拒否する
+    // (ダッシュボードや教員割り当てが schedule への join を前提にしているため)。
+    const dailySessions = await listCollection("dailySessions");
+    const threshold = startOfTodayJstMs();
+    const hasActiveSession = dailySessions.some((ds) => {
+      if (ds.data.scheduleId !== id) return false;
+      const t = new Date(String(ds.data.date)).getTime();
+      return !Number.isNaN(t) && t >= threshold;
+    });
+
+    if (hasActiveSession) {
+      res.status(409).json({
+        error: "当日以降の授業が残っているため削除できません。授業終了後に再度お試しください。",
+      });
+      return;
+    }
+
     await deleteDocument("schedules", id);
     res.status(200).json({ id });
   } catch (error) {
