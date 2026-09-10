@@ -1,8 +1,6 @@
 import type { NextPage } from 'next';
-import { useRouter } from 'next/router';
 import { useEffect, useState } from 'react';
 import styles from '../styles/Attendance.module.css';
-import homeStyles from '../styles/Home.module.css';
 import UserProfileButton from '../components/UserProfileButton';
 import { authHeaders } from '../lib/clientAuth';
 import { formatBeaconId } from '../lib/beaconId';
@@ -61,7 +59,6 @@ type FormState = {
 const emptyForm: FormState = { name: '', email: '', classId: '', beaconId: '' };
 
 const TeachersPage: NextPage = () => {
-  const router = useRouter();
   const [teachers, setTeachers] = useState<Teacher[]>([]);
   const [classes, setClasses] = useState<ClassOption[]>([]);
   const [search, setSearch] = useState('');
@@ -182,15 +179,6 @@ const TeachersPage: NextPage = () => {
           <h1 className={styles.title}>教員・BLE管理</h1>
         </div>
         <div className={styles.headerRight}>
-          <div className={homeStyles.tabGroup}>
-            <button
-              className={homeStyles.tab}
-              onClick={() => router.push('/promotion')}
-            >進級処理</button>
-            <button className={`${homeStyles.tab} ${homeStyles.tabActive}`}>
-              教員・BLE管理
-            </button>
-          </div>
           <button className={styles.iconBtn}><BellIcon /></button>
           <UserProfileButton />
         </div>

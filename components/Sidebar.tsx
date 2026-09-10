@@ -74,7 +74,7 @@ const navItems = [
   },
   {
     label: '生徒・クラス管理',
-    href: '/promotion',
+    href: '/teachers',
     activeFor: ['/promotion', '/teachers'],
     icon: <UsersIcon />,
   },
