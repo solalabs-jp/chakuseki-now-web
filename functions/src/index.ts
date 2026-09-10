@@ -539,14 +539,8 @@ export const deleteUser = onRequest(async (request, response) => {
   }
 
   try {
-    const userSnap = await db.collection("users").doc(body.uid).get();
-
-    // このエンドポイントは教員管理用。Cloud Functions の URL は
-    // requireTeacherCaller(呼び出し元が teacher か)しか検証しないため、
-    // ここで操作対象も teacher であることを確認する。これが無いと、
-    // teacher トークンを持つ誰でも任意ユーザー(生徒・他教員・管理者)を
-    // 削除できてしまう。
-    if (!userSnap.exists || userSnap.data()?.role !== "teacher") {
+    const userSnap = await requireTeacherTarget(body.uid);
+    if (!userSnap) {
       response.status(404).json({ error: "Teacher not found." });
       return;
     }
@@ -652,8 +646,8 @@ export const updateUser = onRequest(async (request, response) => {
 
   try {
     // 操作対象が teacher であることを確認する(deleteUser と同様の理由)。
-    const targetSnap = await db.collection("users").doc(body.uid).get();
-    if (!targetSnap.exists || targetSnap.data()?.role !== "teacher") {
+    const targetSnap = await requireTeacherTarget(body.uid);
+    if (!targetSnap) {
       response.status(404).json({ error: "Teacher not found." });
       return;
     }
@@ -1904,4 +1898,18 @@ const requireTeacherCaller = async (
   }
 
   return callerUid;
+};
+
+/**
+ * deleteUser/updateUser の保護用。呼び出し元が teacher であることに加え、
+ * 「操作対象」も teacher であることを確認する。これが無いと、teacher
+ * トークンを持つ誰でも任意ユーザー(生徒・他教員・管理者)を削除・改変
+ * できてしまう。
+ */
+const requireTeacherTarget = async (
+  uid: string
+): Promise<FirebaseFirestore.DocumentSnapshot | null> => {
+  const snap = await db.collection("users").doc(uid).get();
+  if (!snap.exists || snap.data()?.role !== "teacher") return null;
+  return snap;
 };
