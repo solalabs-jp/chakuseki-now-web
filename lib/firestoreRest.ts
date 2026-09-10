@@ -206,26 +206,44 @@ export async function getDocument(
 
 export async function listCollection(collectionName: string): Promise<FirestoreDoc[]> {
   const token = await getAccessToken();
-  const url = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents/${collectionName}`;
+  const baseUrl = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents/${collectionName}`;
 
-  const response = await fetch(url, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
+  const docs: FirestoreDoc[] = [];
+  let pageToken: string | undefined;
 
-  if (!response.ok) {
-    throw new Error(
-      `Failed to list ${collectionName}: ${response.status} ${await response.text()}`
-    );
-  }
+  // Firestore REST の :list は 1 レスポンスあたり最大 ~300 件しか返さない。
+  // nextPageToken を辿って全ページを取得する(件数超過時の無言の切り詰め防止)。
+  do {
+    const url = new URL(baseUrl);
+    url.searchParams.set("pageSize", "300");
+    if (pageToken) url.searchParams.set("pageToken", pageToken);
 
-  const parsed = (await response.json()) as {
-    documents?: Array<{ name: string; fields?: Record<string, FirestoreValue> }>;
-  };
+    const response = await fetch(url, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
 
-  return (parsed.documents ?? []).map((doc) => ({
-    id: doc.name.split("/").pop() as string,
-    data: fromFirestoreFields(doc.fields ?? {}),
-  }));
+    if (!response.ok) {
+      throw new Error(
+        `Failed to list ${collectionName}: ${response.status} ${await response.text()}`
+      );
+    }
+
+    const parsed = (await response.json()) as {
+      documents?: Array<{ name: string; fields?: Record<string, FirestoreValue> }>;
+      nextPageToken?: string;
+    };
+
+    for (const doc of parsed.documents ?? []) {
+      docs.push({
+        id: doc.name.split("/").pop() as string,
+        data: fromFirestoreFields(doc.fields ?? {}),
+      });
+    }
+
+    pageToken = parsed.nextPageToken;
+  } while (pageToken);
+
+  return docs;
 }
 
 function toFirestoreValue(value: unknown): FirestoreValue {
