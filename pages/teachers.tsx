@@ -66,6 +66,7 @@ const TeachersPage: NextPage = () => {
   const [error, setError] = useState<string | null>(null);
 
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingBase, setEditingBase] = useState<FormState | null>(null);
   const [form, setForm] = useState<FormState>(emptyForm);
   const [saving, setSaving] = useState(false);
   const [panelOpen, setPanelOpen] = useState(false);
@@ -97,36 +98,55 @@ const TeachersPage: NextPage = () => {
   };
 
   const openEditPanel = (teacher: Teacher) => {
-    setEditingId(teacher.id);
-    setForm({
+    const base: FormState = {
       name: teacher.name,
       email: teacher.email,
       classId: teacher.classId,
       beaconId: formatBeaconId(teacher.beaconId),
-    });
+    };
+    setEditingId(teacher.id);
+    setEditingBase(base);
+    setForm(base);
     setPanelOpen(true);
   };
 
   const closePanel = () => {
     setPanelOpen(false);
     setEditingId(null);
+    setEditingBase(null);
     setForm(emptyForm);
   };
 
   const handleSave = async () => {
     setSaving(true);
     try {
-      const res = editingId
-        ? await fetch(`/api/teachers/${encodeURIComponent(editingId)}`, {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/json', ...authHeaders() },
-            body: JSON.stringify(form),
-          })
-        : await fetch('/api/teachers', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', ...authHeaders() },
-            body: JSON.stringify(form),
-          });
+      let res: Response;
+      if (editingId) {
+        // 変更されたフィールドだけを送る。特に email を毎回送ると
+        // サーバー側で不要な admin.auth().updateUser が走るため除外する。
+        const base = editingBase ?? emptyForm;
+        const patch: Partial<FormState> = {};
+        (Object.keys(form) as (keyof FormState)[]).forEach((key) => {
+          if (form[key] !== base[key]) patch[key] = form[key];
+        });
+
+        if (Object.keys(patch).length === 0) {
+          closePanel();
+          return;
+        }
+
+        res = await fetch(`/api/teachers/${encodeURIComponent(editingId)}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json', ...authHeaders() },
+          body: JSON.stringify(patch),
+        });
+      } else {
+        res = await fetch('/api/teachers', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...authHeaders() },
+          body: JSON.stringify(form),
+        });
+      }
 
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
