@@ -143,10 +143,13 @@ const ScheduleDetailPage: NextPage = () => {
     fetch('/api/teachers', { headers: authHeaders() })
       .then((res) => res.json())
       .then((data) => {
-        if (data.error) return;
+        if (data.error) {
+          setError(data.error);
+          return;
+        }
         setTeachers(data.teachers);
       })
-      .catch(() => {});
+      .catch(() => setError('教員一覧の取得に失敗しました'));
   }, []);
 
   const openAddForm = (dayIdx: number, periodId?: string) => {
