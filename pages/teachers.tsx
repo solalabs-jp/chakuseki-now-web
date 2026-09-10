@@ -73,6 +73,7 @@ const TeachersPage: NextPage = () => {
 
   const loadTeachers = () => {
     setLoading(true);
+    setError(null);
     fetch('/api/teachers', { headers: authHeaders() })
       .then((res) => res.json())
       .then((data) => {
