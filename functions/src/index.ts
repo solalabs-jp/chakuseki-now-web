@@ -849,8 +849,11 @@ export const studentBeacon = onRequest(async (request, response) => {
       logger.warn("Student beacon: no matching teacher", {
         beaconId: scannedBeaconId,
       });
-      response.status(404).json({
-        error: "このビーコンIDに対応する先生が見つかりません。",
+      // 未設定の部屋などビーコンが未登録でも、生徒クライアントとの
+      // 互換性のため200を返し、本文でmatched:falseを示す。
+      response.status(200).json({
+        matched: false,
+        message: "このビーコンIDに対応する先生が見つかりません。",
       });
       return;
     }
@@ -872,6 +875,7 @@ export const studentBeacon = onRequest(async (request, response) => {
     });
 
     response.status(200).json({
+      matched: true,
       message: "Beacon received.",
       teacherId: matchedTeacher.id,
       teacherName,
