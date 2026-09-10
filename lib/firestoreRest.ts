@@ -238,6 +238,9 @@ function toFirestoreValue(value: unknown): FirestoreValue {
   if (Array.isArray(value)) {
     return { arrayValue: { values: value.map(toFirestoreValue) } };
   }
+  if (value instanceof Date) {
+    return { timestampValue: value.toISOString() };
+  }
   if (typeof value === "object") {
     return { mapValue: { fields: toFirestoreFields(value as Record<string, unknown>) } };
   }
