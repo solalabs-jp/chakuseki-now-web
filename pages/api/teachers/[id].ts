@@ -17,6 +17,7 @@ function isNonEmptyString(value: unknown): value is string {
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   const uid = await requireTeacher(req, res);
   if (!uid) return;
+  const authHeader = req.headers.authorization as string;
 
   const id = String(req.query.id ?? "");
 
@@ -27,7 +28,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   if (req.method === "DELETE") {
     try {
-      const result = await deleteAuthUser(id);
+      const result = await deleteAuthUser(id, authHeader);
       if ("error" in result) {
         res.status(result.status).json({ error: result.error });
         return;
@@ -81,7 +82,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 
   try {
-    const result = await updateAuthUser(update);
+    const result = await updateAuthUser(update, authHeader);
     if ("error" in result) {
       res.status(result.status).json({ error: result.error });
       return;

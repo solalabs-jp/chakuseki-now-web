@@ -39,11 +39,12 @@ type RegisterAuthUserResult =
  * a BLE beacon.
  */
 export async function registerAuthUser(
-  input: RegisterAuthUserInput
+  input: RegisterAuthUserInput,
+  authHeader: string
 ): Promise<RegisterAuthUserResult> {
   const response = await fetch(REGISTER_URL, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", Authorization: authHeader },
     body: JSON.stringify(input),
   });
 
@@ -81,10 +82,10 @@ type DeleteAuthUserResult = { ok: true } | { error: string; status: number };
  * a stranded Auth account that can still log in / blocks re-registering the
  * same email.
  */
-export async function deleteAuthUser(uid: string): Promise<DeleteAuthUserResult> {
+export async function deleteAuthUser(uid: string, authHeader: string): Promise<DeleteAuthUserResult> {
   const response = await fetch(DELETE_USER_URL, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", Authorization: authHeader },
     body: JSON.stringify({ uid }),
   });
 
@@ -115,10 +116,13 @@ type UpdateAuthUserResult = { ok: true } | { error: string; status: number };
  * to the Firebase Auth account too (via the updateUser Cloud Function) so
  * Firestore and the account used to actually log in never diverge.
  */
-export async function updateAuthUser(input: UpdateAuthUserInput): Promise<UpdateAuthUserResult> {
+export async function updateAuthUser(
+  input: UpdateAuthUserInput,
+  authHeader: string
+): Promise<UpdateAuthUserResult> {
   const response = await fetch(UPDATE_USER_URL, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", Authorization: authHeader },
     body: JSON.stringify(input),
   });
 

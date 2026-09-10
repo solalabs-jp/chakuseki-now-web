@@ -417,6 +417,9 @@ export const registerUser = onRequest(async (request, response) => {
     return;
   }
 
+  const callerUid = await requireTeacherCaller(request, response);
+  if (!callerUid) return;
+
   const body = (request.body ?? {}) as RegisterRequestBody;
 
   if (
@@ -508,6 +511,9 @@ export const deleteUser = onRequest(async (request, response) => {
     return;
   }
 
+  const callerUid = await requireTeacherCaller(request, response);
+  if (!callerUid) return;
+
   const body = (request.body ?? {}) as DeleteUserRequestBody;
 
   if (!isNonEmptyString(body.uid)) {
@@ -572,6 +578,9 @@ export const updateUser = onRequest(async (request, response) => {
     sendStatus(response, 405);
     return;
   }
+
+  const callerUid = await requireTeacherCaller(request, response);
+  if (!callerUid) return;
 
   const body = (request.body ?? {}) as UpdateUserRequestBody;
 
@@ -1740,4 +1749,48 @@ const verifyToken = async (
     );
     return null;
   }
+};
+
+/**
+ * registerUser/updateUser/deleteUserの保護用。これらはCloud FunctionsのURLに
+ * 直接POSTすれば誰でも呼べてしまうため、ラッパーのNext.js API(requireTeacher)
+ * とは別に、この関数自体でも呼び出し元がteacherロールでログイン済みかを検証する。
+ */
+const requireTeacherCaller = async (
+  request: FunctionRequest,
+  response: FunctionResponse
+): Promise<string | null> => {
+  const callerUid = await verifyToken(request);
+  if (!callerUid) {
+    response.status(401).json({ error: "Authentication required." });
+    return null;
+  }
+
+  let callerDoc = await db.collection("users").doc(callerUid).get();
+  if (!callerDoc.exists) {
+    // uidがFirestoreのドキュメントIDと一致しない場合(シードデータ等)は
+    // emailで検索する。Next.js側のrequireTeacherと同じフォールバック。
+    try {
+      const authUser = await admin.auth().getUser(callerUid);
+      if (authUser.email) {
+        const byEmail = await db
+          .collection("users")
+          .where("email", "==", authUser.email)
+          .limit(1)
+          .get();
+        if (!byEmail.empty) {
+          callerDoc = byEmail.docs[0];
+        }
+      }
+    } catch (err) {
+      logger.warn("requireTeacherCaller: email fallback failed", { error: err });
+    }
+  }
+
+  if (!callerDoc.exists || callerDoc.data()?.role !== "teacher") {
+    response.status(403).json({ error: "Teacher role required." });
+    return null;
+  }
+
+  return callerUid;
 };

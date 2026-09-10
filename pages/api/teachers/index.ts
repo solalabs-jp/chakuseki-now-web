@@ -18,6 +18,7 @@ function isNonEmptyString(value: unknown): value is string {
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   const uid = await requireTeacher(req, res);
   if (!uid) return;
+  const authHeader = req.headers.authorization as string;
 
   if (req.method === "GET") {
     try {
@@ -57,14 +58,17 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
 
     try {
-      const result = await registerAuthUser({
-        email: body.email,
-        password: DEFAULT_PASSWORD,
-        role: "teacher",
-        name: body.name,
-        classId: isNonEmptyString(body.classId) ? body.classId : undefined,
-        beaconId: isNonEmptyString(body.beaconId) ? formatBeaconId(body.beaconId) : undefined,
-      });
+      const result = await registerAuthUser(
+        {
+          email: body.email,
+          password: DEFAULT_PASSWORD,
+          role: "teacher",
+          name: body.name,
+          classId: isNonEmptyString(body.classId) ? body.classId : undefined,
+          beaconId: isNonEmptyString(body.beaconId) ? formatBeaconId(body.beaconId) : undefined,
+        },
+        authHeader
+      );
       if ("error" in result) {
         console.error("teachers POST: registerAuthUser failed", result.status, result.error);
         res.status(result.status).json({ error: result.error });
