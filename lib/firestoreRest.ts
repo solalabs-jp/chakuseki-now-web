@@ -304,6 +304,59 @@ export async function upsertDocument(
   }
 }
 
+/**
+ * 単一フィールドの等価条件で絞り込んだドキュメントを取得する。
+ * listCollection と違い、対象コレクション全体を読まずに済むため、
+ * 特定 ID への参照有無だけを確認したいケースに向く。
+ */
+export async function queryCollection(
+  collectionName: string,
+  field: string,
+  value: unknown
+): Promise<FirestoreDoc[]> {
+  const token = await getAccessToken();
+  const url = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents:runQuery`;
+
+  const response = await fetch(url, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      structuredQuery: {
+        from: [{ collectionId: collectionName }],
+        where: {
+          fieldFilter: {
+            field: { fieldPath: field },
+            op: "EQUAL",
+            value: toFirestoreValue(value),
+          },
+        },
+      },
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(
+      `Failed to query ${collectionName} where ${field}==${String(value)}: ${response.status} ${await response.text()}`
+    );
+  }
+
+  const parsed = (await response.json()) as Array<{
+    document?: { name: string; fields?: Record<string, FirestoreValue> };
+  }>;
+
+  return parsed
+    .filter((entry): entry is { document: { name: string; fields?: Record<string, FirestoreValue> } } =>
+      Boolean(entry.document)
+    )
+    .map((entry) => ({
+      id: entry.document.name.split("/").pop() as string,
+      data: fromFirestoreFields(entry.document.fields ?? {}),
+    }));
+}
+
 export async function deleteDocument(collectionName: string, docId: string): Promise<void> {
   const token = await getAccessToken();
   const url = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents/${collectionName}/${docId}`;

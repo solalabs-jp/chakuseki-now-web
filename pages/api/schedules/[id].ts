@@ -1,5 +1,5 @@
 import type { NextApiRequest, NextApiResponse } from "next";
-import { deleteDocument, listCollection } from "../../../lib/firestoreRest";
+import { deleteDocument, queryCollection } from "../../../lib/firestoreRest";
 import { requireTeacher } from "../../../lib/auth";
 
 function isNonEmptyString(value: unknown): value is string {
@@ -34,10 +34,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     // この schedule から生成済みの dailySessions を物理削除で孤児化させない。
     // 当日以降の dailySessions が残っている場合は削除を拒否する
     // (ダッシュボードや教員割り当てが schedule への join を前提にしているため)。
-    const dailySessions = await listCollection("dailySessions");
+    // scheduleId で絞ったクエリを使い、コレクション全体は読まない。
+    const matchingSessions = await queryCollection("dailySessions", "scheduleId", id);
     const threshold = startOfTodayJstMs();
-    const hasActiveSession = dailySessions.some((ds) => {
-      if (ds.data.scheduleId !== id) return false;
+    const hasActiveSession = matchingSessions.some((ds) => {
       const t = new Date(String(ds.data.date)).getTime();
       return !Number.isNaN(t) && t >= threshold;
     });
