@@ -522,6 +522,11 @@ export const deleteUser = onRequest(async (request, response) => {
   }
 
   try {
+    const userSnap = await db.collection("users").doc(body.uid).get();
+    const userEmail = userSnap.exists
+      ? (userSnap.data()?.email as string | undefined)
+      : undefined;
+
     // Authアカウントが既に存在しない場合はエラーにせず、Firestore側の
     // 削除だけ進める(整合性を取り戻す操作として許容する)。
     try {
@@ -530,6 +535,31 @@ export const deleteUser = onRequest(async (request, response) => {
       const errObj = err as Record<string, unknown>;
       if (String(errObj?.code) !== "auth/user-not-found") {
         throw err;
+      }
+      // Firestoreのdoc IDとAuth UIDが一致しない旧データでは、doc IDでの
+      // 削除がuser-not-foundになる。emailから実UIDを解決して孤立Authアカウント
+      // を残さないようにする。
+      if (isNonEmptyString(userEmail)) {
+        try {
+          const authUser = await admin.auth().getUserByEmail(userEmail);
+          await admin.auth().deleteUser(authUser.uid);
+          logger.warn("deleteUser: removed orphan Auth account via email", {
+            docId: body.uid,
+            authUid: authUser.uid,
+          });
+        } catch (lookupErr: unknown) {
+          const lookupErrObj = lookupErr as Record<string, unknown>;
+          if (String(lookupErrObj?.code) !== "auth/user-not-found") {
+            throw lookupErr;
+          }
+          logger.warn("deleteUser: no Auth account found for user", {
+            docId: body.uid,
+          });
+        }
+      } else {
+        logger.warn("deleteUser: Auth user not found and no email to resolve", {
+          docId: body.uid,
+        });
       }
     }
 
