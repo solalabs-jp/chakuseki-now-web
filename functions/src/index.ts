@@ -717,9 +717,25 @@ export const createCheckinQuestion = onRequest(async (request, response) => {
 
 // ─── Student endpoints ───────────────────────────────────────────────────────
 
-/** Strips non-hex characters and uppercases, so "01a2-B3.." / "01A2b3.." compare equal. */
+/**
+ * Formats a BLE beacon ID as a standard UUID (8-4-4-4-12), so "01a2-B3.." /
+ * "01A2b3.." normalize to the same value before comparison.
+ *
+ * Keep this in sync with formatBeaconId in lib/beaconId.ts (Next.js side) —
+ * they can't share code directly since functions/ and the web app are
+ * separate packages, but both must agree on what counts as an equivalent
+ * beacon ID or matching breaks again.
+ */
 function normalizeBeaconId(value: string): string {
-  return value.replace(/[^0-9a-fA-F]/g, "").toUpperCase();
+  const hex = value.replace(/[^0-9a-fA-F]/g, "").slice(0, 32).toUpperCase();
+  const groups = [
+    hex.slice(0, 8),
+    hex.slice(8, 12),
+    hex.slice(12, 16),
+    hex.slice(16, 20),
+    hex.slice(20, 32),
+  ].filter(Boolean);
+  return groups.join("-");
 }
 
 export const studentBeacon = onRequest(async (request, response) => {
