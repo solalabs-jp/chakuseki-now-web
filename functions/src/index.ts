@@ -923,7 +923,12 @@ export const studentBeacon = onRequest(async (request, response) => {
     });
   } catch (err) {
     logger.error("Error processing student beacon", {error: err});
-    response.status(500).json({error: "Internal server error."});
+    // 内部エラー時も生徒クライアント互換のため200を返す(未マッチ時に200へ
+    // 戻した修正と同じ理由)。記録漏れは次回ポーリングで回復する。
+    response.status(200).json({
+      matched: false,
+      message: "Beacon received.",
+    });
   }
 });
 
