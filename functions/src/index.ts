@@ -596,7 +596,22 @@ export const updateUser = onRequest(async (request, response) => {
 
   try {
     if (isNonEmptyString(body.email)) {
-      await admin.auth().updateUser(body.uid, { email: body.email });
+      try {
+        await admin.auth().updateUser(body.uid, { email: body.email });
+      } catch (authErr: unknown) {
+        // Firestore の doc ID と Auth UID が一致しない旧データでは Auth
+        // ユーザーが見つからないことがある。その場合でも Firestore 側の
+        // 更新は進める。
+        if (
+          String((authErr as Record<string, unknown>)?.code) !==
+          "auth/user-not-found"
+        ) {
+          throw authErr;
+        }
+        logger.warn("updateUser: Auth user not found, updating Firestore only", {
+          uid: body.uid,
+        });
+      }
     }
 
     const update: Record<string, unknown> = {};
