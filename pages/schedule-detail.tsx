@@ -101,6 +101,7 @@ const ScheduleDetailPage: NextPage = () => {
 
   const loadTimetable = () => {
     setLoading(true);
+    setError(null);
     fetch(`/api/timetable/detail?classId=${encodeURIComponent(classId)}`, { headers: authHeaders() })
       .then((res) => res.json())
       .then((data) => {
