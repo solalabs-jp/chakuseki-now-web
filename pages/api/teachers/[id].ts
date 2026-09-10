@@ -2,6 +2,7 @@ import type { NextApiRequest, NextApiResponse } from "next";
 import { requireTeacher } from "../../../lib/auth";
 import { formatBeaconId } from "../../../lib/beaconId";
 import { deleteAuthUser, updateAuthUser } from "../../../lib/registerAuthUser";
+import { getDocument } from "../../../lib/firestoreRest";
 
 type TeacherInput = {
   name?: unknown;
@@ -26,6 +27,20 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return;
   }
 
+  if (req.method !== "DELETE" && req.method !== "PATCH") {
+    res.setHeader("Allow", "PATCH, DELETE");
+    res.status(405).end();
+    return;
+  }
+
+  // このエンドポイントは教員管理用。対象が教員でない(生徒・管理者など)場合は
+  // 削除・改変を許可しない。
+  const target = await getDocument("users", id);
+  if (!target || target.data.role !== "teacher") {
+    res.status(404).json({ error: "Teacher not found." });
+    return;
+  }
+
   if (req.method === "DELETE") {
     try {
       const result = await deleteAuthUser(id, authHeader);
@@ -38,12 +53,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       console.error("teachers DELETE error", error);
       res.status(500).json({ error: error instanceof Error ? error.message : "Unknown error" });
     }
-    return;
-  }
-
-  if (req.method !== "PATCH") {
-    res.setHeader("Allow", "PATCH, DELETE");
-    res.status(405).end();
     return;
   }
 
