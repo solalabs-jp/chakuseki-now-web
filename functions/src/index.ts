@@ -433,6 +433,16 @@ export const registerUser = onRequest(async (request, response) => {
     return;
   }
 
+  // role は許可された値のみ受け付ける。任意文字列を許すと teacher
+  // アカウントから admin 相当のロールを持つユーザーを作成できてしまう。
+  const ALLOWED_ROLES = ["teacher", "student"];
+  if (!ALLOWED_ROLES.includes(body.role)) {
+    response.status(400).json({
+      error: `role must be one of: ${ALLOWED_ROLES.join(", ")}.`,
+    });
+    return;
+  }
+
   try {
     // 1. Firebase Auth にユーザーを作成
     const userRecord = await admin.auth().createUser({
@@ -530,9 +540,18 @@ export const deleteUser = onRequest(async (request, response) => {
 
   try {
     const userSnap = await db.collection("users").doc(body.uid).get();
-    const userEmail = userSnap.exists
-      ? (userSnap.data()?.email as string | undefined)
-      : undefined;
+
+    // このエンドポイントは教員管理用。Cloud Functions の URL は
+    // requireTeacherCaller(呼び出し元が teacher か)しか検証しないため、
+    // ここで操作対象も teacher であることを確認する。これが無いと、
+    // teacher トークンを持つ誰でも任意ユーザー(生徒・他教員・管理者)を
+    // 削除できてしまう。
+    if (!userSnap.exists || userSnap.data()?.role !== "teacher") {
+      response.status(404).json({ error: "Teacher not found." });
+      return;
+    }
+
+    const userEmail = userSnap.data()?.email as string | undefined;
 
     // Authアカウントが既に存在しない場合はエラーにせず、Firestore側の
     // 削除だけ進める(整合性を取り戻す操作として許容する)。
@@ -632,6 +651,13 @@ export const updateUser = onRequest(async (request, response) => {
   }
 
   try {
+    // 操作対象が teacher であることを確認する(deleteUser と同様の理由)。
+    const targetSnap = await db.collection("users").doc(body.uid).get();
+    if (!targetSnap.exists || targetSnap.data()?.role !== "teacher") {
+      response.status(404).json({ error: "Teacher not found." });
+      return;
+    }
+
     if (isNonEmptyString(body.email)) {
       try {
         await admin.auth().updateUser(body.uid, { email: body.email });
@@ -646,8 +672,7 @@ export const updateUser = onRequest(async (request, response) => {
         // 現メールアドレスから実 UID を解決し、Auth 側も必ず更新する。
         // 解決できなければ Auth と Firestore が乖離して教員がログイン
         // 不能になるため、更新せずエラーにする。
-        const snap = await db.collection("users").doc(body.uid).get();
-        const currentEmail = snap.data()?.email as string | undefined;
+        const currentEmail = targetSnap.data()?.email as string | undefined;
         if (!isNonEmptyString(currentEmail)) {
           throw authErr;
         }
