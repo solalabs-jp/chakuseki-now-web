@@ -2,7 +2,7 @@ import type { NextApiRequest, NextApiResponse } from "next";
 import { requireTeacher } from "../../../lib/auth";
 import { formatBeaconId } from "../../../lib/beaconId";
 import { deleteAuthUser, updateAuthUser } from "../../../lib/registerAuthUser";
-import { getDocument } from "../../../lib/firestoreRest";
+import { getDocument, listCollection } from "../../../lib/firestoreRest";
 
 type TeacherInput = {
   name?: unknown;
@@ -81,7 +81,28 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     hasUpdate = true;
   }
   if (body.beaconId !== undefined) {
-    update.beaconId = isNonEmptyString(body.beaconId) ? formatBeaconId(body.beaconId) : "";
+    const normalizedBeaconId = isNonEmptyString(body.beaconId)
+      ? formatBeaconId(body.beaconId)
+      : "";
+
+    if (normalizedBeaconId) {
+      // 他の教員が既に同じ(正規化後の)beaconIdを登録していないか確認する
+      // (自分自身は除外)。理由は POST 側と同じ(誤帰属の防止)。
+      const existingUsers = await listCollection("users");
+      const duplicate = existingUsers.find(
+        (u) =>
+          u.id !== id &&
+          u.data.role === "teacher" &&
+          isNonEmptyString(u.data.beaconId) &&
+          formatBeaconId(String(u.data.beaconId)) === normalizedBeaconId
+      );
+      if (duplicate) {
+        res.status(409).json({ error: "このビーコンIDは既に他の教員に登録されています。" });
+        return;
+      }
+    }
+
+    update.beaconId = normalizedBeaconId;
     hasUpdate = true;
   }
 

@@ -58,6 +58,26 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
 
     try {
+      // 他の教員が既に同じ(正規化後の)beaconIdを登録していないか確認する。
+      // 重複を許すと studentBeacon 側の検索がどちらか一方(Firestoreが
+      // 返す順序に依存)にしかマッチせず、出席スキャンが誤帰属する。
+      const normalizedBeaconId = isNonEmptyString(body.beaconId)
+        ? formatBeaconId(body.beaconId)
+        : undefined;
+      if (normalizedBeaconId) {
+        const existingUsers = await listCollection("users");
+        const duplicate = existingUsers.find(
+          (u) =>
+            u.data.role === "teacher" &&
+            isNonEmptyString(u.data.beaconId) &&
+            formatBeaconId(String(u.data.beaconId)) === normalizedBeaconId
+        );
+        if (duplicate) {
+          res.status(409).json({ error: "このビーコンIDは既に他の教員に登録されています。" });
+          return;
+        }
+      }
+
       const result = await registerAuthUser(
         {
           email: body.email,
@@ -65,7 +85,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           role: "teacher",
           name: body.name,
           classId: isNonEmptyString(body.classId) ? body.classId : undefined,
-          beaconId: isNonEmptyString(body.beaconId) ? formatBeaconId(body.beaconId) : undefined,
+          beaconId: normalizedBeaconId,
         },
         authHeader
       );
