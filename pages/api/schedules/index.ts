@@ -34,10 +34,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     !isNonEmptyString(body.defaultTeacherId) ||
     !Number.isInteger(dayOfWeek) ||
     dayOfWeek < 1 ||
-    dayOfWeek > 7
+    dayOfWeek > 5
   ) {
     res.status(400).json({
-      error: "classId, periodId, subjectName, dayOfWeek(1-7) and defaultTeacherId are required.",
+      error: "classId, periodId, subjectName, dayOfWeek(1-5) and defaultTeacherId are required.",
     });
     return;
   }
