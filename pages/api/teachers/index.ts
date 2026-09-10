@@ -66,6 +66,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         beaconId: isNonEmptyString(body.beaconId) ? formatBeaconId(body.beaconId) : undefined,
       });
       if ("error" in result) {
+        console.error("teachers POST: registerAuthUser failed", result.status, result.error);
         res.status(result.status).json({ error: result.error });
         return;
       }

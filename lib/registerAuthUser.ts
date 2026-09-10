@@ -47,9 +47,17 @@ export async function registerAuthUser(
     body: JSON.stringify(input),
   });
 
-  const data = await response.json().catch(() => ({}));
+  const rawText = await response.text();
+  const data = (() => {
+    try {
+      return JSON.parse(rawText);
+    } catch {
+      return {};
+    }
+  })();
 
   if (!response.ok) {
+    console.error("registerAuthUser: registerUser function failed", response.status, rawText);
     return {
       error: typeof data.error === "string" ? data.error : "Failed to register user.",
       status: response.status,
