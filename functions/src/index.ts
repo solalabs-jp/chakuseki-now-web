@@ -463,6 +463,9 @@ export const registerUser = onRequest(async (request, response) => {
     }
     if (isNonEmptyString(body.beaconId)) {
       userData.beaconId = body.beaconId;
+      // studentBeacon が全教員を読んでメモリ上で正規化・比較する代わりに
+      // 等価クエリで絞り込めるよう、正規化済みの値も保存しておく。
+      userData.normalizedBeaconId = normalizeBeaconId(body.beaconId);
     }
     userData.email = body.email;
 
@@ -683,7 +686,12 @@ export const updateUser = onRequest(async (request, response) => {
     if (isNonEmptyString(body.email)) update.email = body.email;
     if (body.name !== undefined) update.name = body.name;
     if (body.classId !== undefined) update.classId = body.classId;
-    if (body.beaconId !== undefined) update.beaconId = body.beaconId;
+    if (body.beaconId !== undefined) {
+      update.beaconId = body.beaconId;
+      update.normalizedBeaconId = isNonEmptyString(body.beaconId)
+        ? normalizeBeaconId(String(body.beaconId))
+        : FieldValue.delete();
+    }
 
     if (Object.keys(update).length > 0) {
       await db.collection("users").doc(body.uid).set(update, { merge: true });
@@ -865,20 +873,35 @@ export const studentBeacon = onRequest(async (request, response) => {
   const normalizedScanned = normalizeBeaconId(scannedBeaconId);
 
   try {
-    // beaconIdの表記ゆれ(大文字小文字・ダッシュ有無)を吸収するため、
-    // Firestoreのwhereではなく取得後にメモリ上で正規化して比較する。
-    const teachersSnapshot = await db
+    // 正規化済みの normalizedBeaconId で絞り込む(等価クエリ、O(1)読み取り)。
+    // registerUser/updateUser/teacherRegisterBeacon は書き込み時に必ず
+    // normalizedBeaconId も保存するが、それ以前に作成された教員ドキュメント
+    // にはこのフィールドが無い場合があるため、ヒットしなければ従来どおり
+    // 全件取得してメモリ上で正規化・比較するフォールバックを行う。
+    const indexedSnapshot = await db
       .collection("users")
       .where("role", "==", "teacher")
+      .where("normalizedBeaconId", "==", normalizedScanned)
+      .limit(1)
       .get();
 
-    const matchedTeacher = teachersSnapshot.docs.find((doc) => {
-      const beaconId = doc.data().beaconId;
-      return (
-        isNonEmptyString(beaconId) &&
-        normalizeBeaconId(beaconId) === normalizedScanned
-      );
-    });
+    let matchedTeacher: FirebaseFirestore.QueryDocumentSnapshot | undefined =
+      indexedSnapshot.docs[0];
+
+    if (!matchedTeacher) {
+      const teachersSnapshot = await db
+        .collection("users")
+        .where("role", "==", "teacher")
+        .get();
+
+      matchedTeacher = teachersSnapshot.docs.find((doc) => {
+        const beaconId = doc.data().beaconId;
+        return (
+          isNonEmptyString(beaconId) &&
+          normalizeBeaconId(beaconId) === normalizedScanned
+        );
+      });
+    }
 
     if (!matchedTeacher) {
       logger.warn("Student beacon: no matching teacher", {
@@ -1527,6 +1550,7 @@ export const teacherRegisterBeacon = onRequest(async (request, response) => {
     await targetDocRef.update({
       session: session,
       beaconId: beaconId,
+      normalizedBeaconId: normalizeBeaconId(beaconId),
       updatedAt: FieldValue.serverTimestamp(),
     });
 
