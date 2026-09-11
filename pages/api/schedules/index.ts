@@ -1,6 +1,7 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { createDocument } from "../../../lib/firestoreRest";
 import { requireTeacher } from "../../../lib/auth";
+import { isNonEmptyString } from "../../../lib/validation";
 
 type ScheduleInput = {
   classId?: unknown;
@@ -9,10 +10,6 @@ type ScheduleInput = {
   dayOfWeek?: unknown;
   defaultTeacherId?: unknown;
 };
-
-function isNonEmptyString(value: unknown): value is string {
-  return typeof value === "string" && value.trim().length > 0;
-}
 
 /**
  * 同一コマ(classId + dayOfWeek + periodId)を表す決定的な doc ID を作る。

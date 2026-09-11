@@ -1,96 +1,23 @@
 import type { NextPage } from 'next';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import styles from '../styles/Attendance.module.css';
 import UserProfileButton from '../components/UserProfileButton';
-import { authHeaders } from '../lib/clientAuth';
+import TeacherFormPanel from '../components/teachers/TeacherFormPanel';
+import TeacherTable from '../components/teachers/TeacherTable';
+import { BellIcon } from '../components/teachers/icons';
+import { emptyForm, type FormState, type Teacher } from '../components/teachers/types';
 import { formatBeaconId } from '../lib/beaconId';
-
-function BellIcon() {
-  return (
-    <svg width="18" height="18" fill="none" stroke="#6b7280" strokeWidth="1.5" viewBox="0 0 24 24" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
-      <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
-    </svg>
-  );
-}
-
-function SearchIcon() {
-  return (
-    <svg width="14" height="14" fill="none" stroke="#9ca3af" strokeWidth="1.5" viewBox="0 0 24 24" strokeLinecap="round">
-      <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
-    </svg>
-  );
-}
-
-function PlusIcon() {
-  return (
-    <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24" strokeLinecap="round">
-      <path d="M12 5v14M5 12h14"/>
-    </svg>
-  );
-}
-
-function BluetoothIcon() {
-  return (
-    <svg width="14" height="14" fill="none" stroke="#3b82f6" strokeWidth="1.5" viewBox="0 0 24 24" strokeLinecap="round" strokeLinejoin="round">
-      <path d="m6.5 6.5 11 11L12 23V1l5.5 5.5-11 11"/>
-    </svg>
-  );
-}
-
-type Teacher = {
-  id: string;
-  name: string;
-  email: string;
-  classId: string;
-  className: string;
-  beaconId: string;
-};
-
-type ClassOption = { id: string; name: string };
-
-type FormState = {
-  name: string;
-  email: string;
-  classId: string;
-  beaconId: string;
-};
-
-const emptyForm: FormState = { name: '', email: '', classId: '', beaconId: '' };
+import { useTeachersData } from '../lib/useTeachersData';
 
 const TeachersPage: NextPage = () => {
-  const [teachers, setTeachers] = useState<Teacher[]>([]);
-  const [classes, setClasses] = useState<ClassOption[]>([]);
+  const { teachers, classes, loading, error, saveTeacher, deleteTeacher } = useTeachersData();
   const [search, setSearch] = useState('');
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingBase, setEditingBase] = useState<FormState | null>(null);
   const [form, setForm] = useState<FormState>(emptyForm);
   const [saving, setSaving] = useState(false);
   const [panelOpen, setPanelOpen] = useState(false);
-
-  const loadTeachers = () => {
-    setLoading(true);
-    setError(null);
-    fetch('/api/teachers', { headers: authHeaders() })
-      .then((res) => res.json())
-      .then((data) => {
-        if (data.error) {
-          setError(data.error);
-          return;
-        }
-        setTeachers(data.teachers);
-        setClasses(data.classes);
-      })
-      .catch((err) => setError(String(err)))
-      .finally(() => setLoading(false));
-  };
-
-  useEffect(() => {
-    loadTeachers();
-  }, []);
 
   const openCreatePanel = () => {
     setEditingId(null);
@@ -120,70 +47,16 @@ const TeachersPage: NextPage = () => {
 
   const handleSave = async () => {
     setSaving(true);
-    try {
-      let res: Response;
-      if (editingId) {
-        // 変更されたフィールドだけを送る。特に email を毎回送ると
-        // サーバー側で不要な admin.auth().updateUser が走るため除外する。
-        const base = editingBase ?? emptyForm;
-        const patch: Partial<FormState> = {};
-        (Object.keys(form) as (keyof FormState)[]).forEach((key) => {
-          if (form[key] !== base[key]) patch[key] = form[key];
-        });
-
-        if (Object.keys(patch).length === 0) {
-          closePanel();
-          return;
-        }
-
-        res = await fetch(`/api/teachers/${encodeURIComponent(editingId)}`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json', ...authHeaders() },
-          body: JSON.stringify(patch),
-        });
-      } else {
-        res = await fetch('/api/teachers', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', ...authHeaders() },
-          body: JSON.stringify(form),
-        });
-      }
-
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        setError(data.error ?? `保存に失敗しました (${res.status})`);
-        return;
-      }
-
-      closePanel();
-      loadTeachers();
-    } catch (err) {
-      setError(String(err));
-    } finally {
-      setSaving(false);
-    }
+    const ok = await saveTeacher(editingId, form, editingBase);
+    setSaving(false);
+    if (ok) closePanel();
   };
 
-  const handleDelete = async (teacher: Teacher) => {
+  const handleDelete = (teacher: Teacher) => {
     if (!window.confirm(`${teacher.name}さんを削除しますか？この操作は取り消せません。`)) {
       return;
     }
-    try {
-      const res = await fetch(`/api/teachers/${encodeURIComponent(teacher.id)}`, {
-        method: 'DELETE',
-        headers: authHeaders(),
-      });
-
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        setError(data.error ?? `削除に失敗しました (${res.status})`);
-        return;
-      }
-
-      loadTeachers();
-    } catch (err) {
-      setError(String(err));
-    }
+    deleteTeacher(teacher);
   };
 
   const filteredTeachers = teachers.filter((t) => {
@@ -205,167 +78,30 @@ const TeachersPage: NextPage = () => {
         </div>
       </div>
 
-      {/* List */}
-      <div className={styles.listSection}>
-        <div className={styles.listHeader}>
-          <div className={styles.listTitleRow}>
-            <span className={styles.listTitle}>教員一覧</span>
-          </div>
-          <div className={styles.listActions}>
-            <div className={styles.searchBox}>
-              <SearchIcon />
-              <input
-                className={styles.searchInput}
-                placeholder="氏名・メールで検索"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-              />
-            </div>
-            <button
-              className={styles.monitorDisplayBtn}
-              onClick={openCreatePanel}
-            >
-              <PlusIcon />
-              新規教員を追加
-            </button>
-          </div>
-        </div>
+      <TeacherTable
+        teachers={filteredTeachers}
+        loading={loading}
+        error={error}
+        search={search}
+        onSearchChange={setSearch}
+        onOpenCreate={openCreatePanel}
+        onEdit={openEditPanel}
+        onDelete={handleDelete}
+      />
 
-        {loading && <p className={styles.commentNone}>読み込み中...</p>}
-        {error && <p style={{ color: '#dc2626', fontSize: 12 }}>データ取得エラー: {error}</p>}
-
-        {!loading && !error && (
-          <table className={styles.table}>
-            <thead>
-              <tr>
-                <th className={styles.th}>教員ID</th>
-                <th className={styles.th}>氏名</th>
-                <th className={styles.th}>メールアドレス</th>
-                <th className={styles.th}>担任クラス</th>
-                <th className={styles.th}>BLEビーコンID</th>
-                <th className={styles.th}></th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredTeachers.map((t) => (
-                <tr key={t.id} className={styles.tr}>
-                  <td className={styles.td}><span className={styles.idText}>{t.id}</span></td>
-                  <td className={styles.td}>
-                    <div className={styles.nameCell}>
-                      <div className={styles.avatar} style={{ background: '#3b82f6' }}>
-                        {t.name.slice(0, 1)}
-                      </div>
-                      <span className={styles.studentName}>{t.name}</span>
-                    </div>
-                  </td>
-                  <td className={styles.td}><span className={styles.timeText}>{t.email}</span></td>
-                  <td className={styles.td}><span className={styles.timeText}>{t.className || '未設定'}</span></td>
-                  <td className={styles.td}>
-                    <span className={styles.statusChip} style={{ background: '#eff6ff', color: '#1d4ed8' }}>
-                      <BluetoothIcon />
-                      {t.beaconId ? formatBeaconId(t.beaconId) : '未登録'}
-                    </span>
-                  </td>
-                  <td className={styles.td}>
-                    <div style={{ display: 'flex', gap: 6 }}>
-                      <button
-                        className={styles.monitorDisplayBtn}
-                        style={{ background: '#fff', color: '#374151', border: '1px solid #e5e7eb' }}
-                        onClick={() => openEditPanel(t)}
-                      >
-                        編集
-                      </button>
-                      <button
-                        className={styles.monitorDisplayBtn}
-                        style={{ background: '#fff', color: '#dc2626', border: '1px solid #fecaca' }}
-                        onClick={() => handleDelete(t)}
-                      >
-                        削除
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </div>
-
-      {/* Edit / create panel */}
-      {panelOpen && (
-        <div className={styles.userPanelOverlay} onClick={closePanel}>
-          <div className={styles.userPanel} onClick={(e) => e.stopPropagation()}>
-            <div className={styles.userPanelHeader}>
-              <div className={styles.userAvatarLarge}>
-                {form.name ? form.name.slice(0, 1) : '教'}
-              </div>
-              <div>
-                <div className={styles.userPanelName}>
-                  {editingId ? '教員情報を編集' : '新規教員を追加'}
-                </div>
-                <div className={styles.userPanelRole}>教員・BLE設定</div>
-              </div>
-            </div>
-
-            <div className={styles.userPanelBody}>
-              <label className={styles.fieldLabel}>氏名</label>
-              <input
-                className={styles.formInput}
-                value={form.name}
-                onChange={(e) => setForm({ ...form, name: e.target.value })}
-                placeholder="例: 根本 康太"
-              />
-
-              <label className={styles.fieldLabel}>メールアドレス</label>
-              <input
-                className={styles.formInput}
-                value={form.email}
-                onChange={(e) => setForm({ ...form, email: e.target.value })}
-                placeholder="teacher001@example.com"
-              />
-
-              <label className={styles.fieldLabel}>担任クラス</label>
-              <select
-                className={styles.formInput}
-                value={form.classId}
-                onChange={(e) => setForm({ ...form, classId: e.target.value })}
-              >
-                <option value="">未設定</option>
-                {classes.map((c) => (
-                  <option key={c.id} value={c.id}>{c.name}</option>
-                ))}
-              </select>
-
-              <label className={styles.fieldLabel}>BLEビーコンID</label>
-              <input
-                className={styles.formInput}
-                value={form.beaconId}
-                onChange={(e) => setForm({ ...form, beaconId: formatBeaconId(e.target.value) })}
-                placeholder="01020304-0506-0708-090A-0B0C0D0E0F10"
-                maxLength={36}
-              />
-            </div>
-
-            <div style={{ display: 'flex', gap: 8 }}>
-              <button
-                className={styles.userPanelButton}
-                style={{ background: '#fff', color: '#374151', border: '1px solid #e5e7eb', flex: 1 }}
-                onClick={closePanel}
-              >
-                キャンセル
-              </button>
-              <button
-                className={styles.userPanelButton}
-                style={{ flex: 1 }}
-                onClick={handleSave}
-                disabled={saving}
-              >
-                {saving ? '保存中...' : '保存する'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <TeacherFormPanel
+        open={panelOpen}
+        editingId={editingId}
+        form={form}
+        classes={classes}
+        saving={saving}
+        onNameChange={(name) => setForm({ ...form, name })}
+        onEmailChange={(email) => setForm({ ...form, email })}
+        onClassIdChange={(classId) => setForm({ ...form, classId })}
+        onBeaconIdChange={(beaconId) => setForm({ ...form, beaconId })}
+        onCancel={closePanel}
+        onSave={handleSave}
+      />
     </div>
   );
 };

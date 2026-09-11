@@ -1,16 +1,8 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { listCollection } from "../../../lib/firestoreRest";
 import { requireTeacher } from "../../../lib/auth";
-
-function jstNow(): Date {
-  const now = new Date();
-  const jstString = now.toLocaleString("en-US", { timeZone: "Asia/Tokyo" });
-  return new Date(jstString);
-}
-
-function jstDateString(): string {
-  return new Date().toLocaleDateString("sv-SE", { timeZone: "Asia/Tokyo" });
-}
+import { hhmmToLabel } from "../../../lib/periodTime";
+import { jstNow, jstTodayDateString, toJstDateString } from "../../../lib/jstDate";
 
 // Firestore's dayOfWeek convention: 1=月...7=日. JS Date#getDay(): 0=日...6=土.
 function toScheduleDayOfWeek(jsDay: number): number {
@@ -26,18 +18,10 @@ function hhmmToMinutes(value: unknown): number | null {
 
 function formatHhmm(value: unknown): string {
   if (typeof value !== "number") return "";
-  const padded = String(value).padStart(4, "0");
-  return `${padded.slice(0, 2)}:${padded.slice(2)}`;
+  return hhmmToLabel(value);
 }
 
 const ATTENDED_STATUSES = new Set(["present", "late", "early_leave", "mid_absence"]);
-
-function dailySessionDateString(value: unknown): string | null {
-  if (typeof value !== "string") return null;
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return null;
-  return date.toLocaleDateString("sv-SE", { timeZone: "Asia/Tokyo" });
-}
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   const uid = await requireTeacher(req, res);
@@ -61,7 +45,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const now = jstNow();
     const nowMinutes = now.getHours() * 60 + now.getMinutes();
     const todayScheduleDay = toScheduleDayOfWeek(now.getDay());
-    const today = jstDateString();
+    const today = jstTodayDateString();
 
     const periodsById = new Map(periods.map((p) => [p.id, p.data]));
     const classesById = new Map(classes.map((c) => [c.id, c.data]));
@@ -91,7 +75,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         const dailySession = dailySessions.find(
           (ds) =>
             ds.data.scheduleId === schedule.id &&
-            dailySessionDateString(ds.data.date ?? ds.data.timestamp) === today
+            toJstDateString(ds.data.date ?? ds.data.timestamp) === today
         );
 
         let attended = 0;

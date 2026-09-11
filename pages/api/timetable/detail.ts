@@ -2,12 +2,12 @@ import type { NextApiRequest, NextApiResponse } from "next";
 import { listCollection } from "../../../lib/firestoreRest";
 import { requireTeacher } from "../../../lib/auth";
 import { formatJstTime } from "../../../lib/jstDate";
+import { hhmmToLabel } from "../../../lib/periodTime";
 
 function formatTime(value: unknown): string {
   // startAt/endAt may be an "HHMM" integer (e.g. 915) or an ISO timestamp string.
   if (typeof value === "number") {
-    const padded = String(value).padStart(4, "0");
-    return `${padded.slice(0, 2)}:${padded.slice(2)}`;
+    return hhmmToLabel(value);
   }
   if (typeof value === "string") {
     if (/T\d{2}:\d{2}/.test(value)) {

@@ -2,10 +2,7 @@ import type { NextApiRequest, NextApiResponse } from "next";
 import { deleteDocument, queryCollection } from "../../../lib/firestoreRest";
 import { requireTeacher } from "../../../lib/auth";
 import { startOfTodayJst } from "../../../lib/jstDate";
-
-function isNonEmptyString(value: unknown): value is string {
-  return typeof value === "string" && value.trim().length > 0;
-}
+import { isNonEmptyString } from "../../../lib/validation";
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   const uid = await requireTeacher(req, res);

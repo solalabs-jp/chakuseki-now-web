@@ -8,6 +8,7 @@ import {
   releaseBeaconClaim,
   reserveBeaconId,
 } from "../../../lib/beaconClaims";
+import { isNonEmptyString } from "../../../lib/validation";
 
 type TeacherInput = {
   name?: unknown;
@@ -15,10 +16,6 @@ type TeacherInput = {
   classId?: unknown;
   beaconId?: unknown;
 };
-
-function isNonEmptyString(value: unknown): value is string {
-  return typeof value === "string" && value.trim().length > 0;
-}
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   const uid = await requireTeacher(req, res);

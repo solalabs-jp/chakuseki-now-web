@@ -1,13 +1,7 @@
 import type { NextApiRequest, NextApiResponse } from "next";
-import { listCollection } from "../../../lib/firestoreRest";
+import { listCollection, queryCollectionWhere } from "../../../lib/firestoreRest";
 import { requireTeacher } from "../../../lib/auth";
-
-function toJstDateString(value: unknown): string | null {
-  if (typeof value !== "string") return null;
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return null;
-  return date.toLocaleDateString("sv-SE", { timeZone: "Asia/Tokyo" });
-}
+import { jstDayBoundsUtc } from "../../../lib/jstDate";
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   const uid = await requireTeacher(req, res);
@@ -16,9 +10,17 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   const classId = String(req.query.classId ?? "class-2A");
 
   try {
+    const { start, end } = jstDayBoundsUtc(new Date());
+
     const [users, attendanceRecords] = await Promise.all([
       listCollection("users"),
-      listCollection("attendanceRecords"),
+      // pages/api/attendance/realtime.ts と同じ理由で、全期間を読んでメモリ上
+      // で当日分に絞り込む代わりに confirmedAt(Firestore Timestamp)の範囲
+      // クエリで当日分だけを取得する。
+      queryCollectionWhere("attendanceRecords", [
+        { field: "confirmedAt", op: "GREATER_THAN_OR_EQUAL", value: start },
+        { field: "confirmedAt", op: "LESS_THAN", value: end },
+      ]),
     ]);
 
     const rosterIds = new Set(
@@ -27,13 +29,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         .map((u) => u.id)
     );
 
-    const today = new Date().toLocaleDateString("sv-SE", { timeZone: "Asia/Tokyo" });
-
-    const records = attendanceRecords.filter(
-      (r) =>
-        rosterIds.has(String(r.data.userId ?? "")) &&
-        toJstDateString(r.data.confirmedAt) === today
-    );
+    const records = attendanceRecords.filter((r) => rosterIds.has(String(r.data.userId ?? "")));
 
     let present = 0;
     let late = 0;

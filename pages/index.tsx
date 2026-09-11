@@ -6,27 +6,7 @@ import styles from '../styles/Home.module.css';
 import scheduleStyles from '../styles/Schedule.module.css';
 import UserProfileButton from '../components/UserProfileButton';
 import { authHeaders } from '../lib/clientAuth';
-
-
-function BellIcon() {
-  return (
-    <svg width="18" height="18" fill="none" stroke="#6b7280" strokeWidth="1.5" viewBox="0 0 24 24" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
-      <path d="M13.73 21a2 2 0 0 1-3.46 0" />
-    </svg>
-  );
-}
-
-function UserCircleIcon() {
-  return (
-    <svg width="18" height="18" fill="none" stroke="#6b7280" strokeWidth="1.5" viewBox="0 0 24 24" strokeLinecap="round" strokeLinejoin="round">
-      <circle cx="12" cy="12" r="10" />
-      <circle cx="12" cy="10" r="3" />
-      <path d="M7 20.662V19a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v1.662" />
-    </svg>
-  );
-}
-
+import { BellIcon } from '../components/icons';
 
 type ScheduleStatus = 'past' | 'current' | 'next' | 'planned';
 
