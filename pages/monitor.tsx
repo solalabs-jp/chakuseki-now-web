@@ -48,17 +48,25 @@ const MonitorPage: NextPage & { getLayout: (page: ReactElement) => ReactElement 
   const [now, setNow] = useState<Date | null>(null);
   const [questionText, setQuestionText] = useState(DEFAULT_QUESTION);
   const [imageUrl, setImageUrl] = useState<string | null>(null);
-  const [isPortrait, setIsPortrait] = useState<boolean>(false);
+  const [layoutMode, setLayoutMode] = useState<'row' | 'colTop' | 'colBottom'>('colTop');
 
   const handleImageLoad = (url: string | null) => {
-    setImageUrl(url);
     if (!url) {
-      setIsPortrait(false);
+      setImageUrl(null);
+      setLayoutMode('colTop');
       return;
     }
     const img = new Image();
     img.onload = () => {
-      setIsPortrait(img.naturalHeight > img.naturalWidth);
+      const ratio = img.naturalWidth / img.naturalHeight;
+      if (ratio < 0.9) {
+        setLayoutMode('row');
+      } else if (ratio >= 0.9 && ratio <= 1.2) {
+        setLayoutMode('colBottom');
+      } else {
+        setLayoutMode('colTop');
+      }
+      setImageUrl(url);
     };
     img.src = url;
   };
@@ -124,8 +132,8 @@ const MonitorPage: NextPage & { getLayout: (page: ReactElement) => ReactElement 
       </div>
 
       {/* Center content */}
-      <div className={`${styles.center} ${imageUrl ? (isPortrait ? styles.layoutRow : styles.layoutCol) : ''}`}>
-        {imageUrl && (
+      <div className={`${styles.center} ${imageUrl ? (layoutMode === 'row' ? styles.layoutRow : styles.layoutCol) : ''}`}>
+        {imageUrl && layoutMode !== 'colBottom' && (
           <div className={styles.imageContainer}>
             <img src={imageUrl} alt="Monitor display" className={styles.monitorImage} />
           </div>
@@ -143,6 +151,11 @@ const MonitorPage: NextPage & { getLayout: (page: ReactElement) => ReactElement 
             (Please answer this question when you check in.)
           </p>
         </div>
+        {imageUrl && layoutMode === 'colBottom' && (
+          <div className={styles.imageContainer}>
+            <img src={imageUrl} alt="Monitor display" className={styles.monitorImage} />
+          </div>
+        )}
       </div>
 
       {/* Bottom */}
