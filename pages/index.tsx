@@ -180,7 +180,10 @@ const Home: NextPage = () => {
             className={`${styles.scheduleRow} ${styles[`row_${item.status}`]}`}
             onClick={() => {
               if (item.status === 'current' || item.status === 'past') {
-                router.push('/attendance');
+                router.push({
+                  pathname: '/attendance',
+                  query: { classId: selectedClassId, scheduleId: item.scheduleId }
+                });
               }
             }}
           >

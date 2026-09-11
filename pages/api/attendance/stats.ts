@@ -14,11 +14,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   if (!uid) return;
 
   const classId = String(req.query.classId ?? "class-2A");
+  const scheduleId = req.query.scheduleId ? String(req.query.scheduleId) : null;
 
   try {
-    const [users, attendanceRecords] = await Promise.all([
+    const [users, attendanceRecords, dailySessions, sessions] = await Promise.all([
       listCollection("users"),
       listCollection("attendanceRecords"),
+      scheduleId ? listCollection("dailySessions") : Promise.resolve([]),
+      scheduleId ? listCollection("sessions") : Promise.resolve([]),
     ]);
 
     const rosterIds = new Set(
@@ -29,11 +32,28 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     const today = new Date().toLocaleDateString("sv-SE", { timeZone: "Asia/Tokyo" });
 
-    const records = attendanceRecords.filter(
-      (r) =>
-        rosterIds.has(String(r.data.userId ?? "")) &&
-        toJstDateString(r.data.confirmedAt) === today
-    );
+    let records = attendanceRecords.filter((r) => rosterIds.has(String(r.data.userId ?? "")));
+
+    if (scheduleId) {
+      const dailySession = dailySessions.find(
+        (ds) =>
+          ds.data.scheduleId === scheduleId &&
+          toJstDateString(ds.data.date ?? ds.data.timestamp) === today
+      );
+
+      if (dailySession) {
+        const sessionIds = new Set(
+          sessions
+            .filter((s) => s.data.dailySessionsId === dailySession.id || s.data.daily_sessionsId === dailySession.id)
+            .map((s) => s.id)
+        );
+        records = records.filter((r) => sessionIds.has(String(r.data.sessionId ?? "")));
+      } else {
+        records = [];
+      }
+    } else {
+      records = records.filter((r) => toJstDateString(r.data.confirmedAt) === today);
+    }
 
     let present = 0;
     let late = 0;

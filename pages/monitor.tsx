@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import type { NextPage } from 'next';
 import type { ReactElement } from 'react';
 import styles from '../styles/Monitor.module.css';
@@ -49,8 +49,10 @@ const MonitorPage: NextPage & { getLayout: (page: ReactElement) => ReactElement 
   const [questionText, setQuestionText] = useState(DEFAULT_QUESTION);
   const [imageUrl, setImageUrl] = useState<string | null>(null);
   const [layoutMode, setLayoutMode] = useState<'row' | 'colTop' | 'colBottom'>('colTop');
+  const latestUrlRef = useRef<string | null>(null);
 
   const handleImageLoad = (url: string | null) => {
+    latestUrlRef.current = url;
     if (!url) {
       setImageUrl(null);
       setLayoutMode('colTop');
@@ -58,6 +60,7 @@ const MonitorPage: NextPage & { getLayout: (page: ReactElement) => ReactElement 
     }
     const img = new Image();
     img.onload = () => {
+      if (latestUrlRef.current !== url) return;
       const ratio = img.naturalWidth / img.naturalHeight;
       if (ratio < 0.9) {
         setLayoutMode('row');
@@ -67,6 +70,11 @@ const MonitorPage: NextPage & { getLayout: (page: ReactElement) => ReactElement 
         setLayoutMode('colTop');
       }
       setImageUrl(url);
+    };
+    img.onerror = () => {
+      if (latestUrlRef.current !== url) return;
+      setImageUrl(null);
+      setLayoutMode('colTop');
     };
     img.src = url;
   };

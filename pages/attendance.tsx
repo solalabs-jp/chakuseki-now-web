@@ -104,6 +104,13 @@ const AttendancePage: NextPage = () => {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
+    if (!router.isReady) return;
+
+    const classId = (router.query.classId as string) || 'class-2A';
+    const scheduleId = (router.query.scheduleId as string) || '';
+    const queryParams = new URLSearchParams({ classId });
+    if (scheduleId) queryParams.append('scheduleId', scheduleId);
+
     const saved = localStorage.getItem('monitorQuestion');
     if (saved) {
       setQuestion(saved);
@@ -117,7 +124,7 @@ const AttendancePage: NextPage = () => {
       setAttachedImageName(savedImgName);
     }
 
-    fetch('/api/attendance/stats?classId=class-2A', { headers: authHeaders() })
+    fetch(`/api/attendance/stats?${queryParams.toString()}`, { headers: authHeaders() })
       .then((res) => res.json())
       .then((data) => {
         if (data.error) return;
@@ -125,18 +132,28 @@ const AttendancePage: NextPage = () => {
       })
       .catch(() => {});
 
-    fetch('/api/attendance/realtime?classId=class-2A', { headers: authHeaders() })
+    fetch(`/api/attendance/realtime?${queryParams.toString()}`, { headers: authHeaders() })
       .then((res) => res.json())
       .then((data) => {
         if (data.error) return;
         setStudents(data.students);
       })
       .catch(() => {});
-  }, []);
+  }, [router.isReady, router.query]);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
+      if (!file.type.startsWith('image/')) {
+        alert('画像ファイルを選択してください。');
+        e.target.value = '';
+        return;
+      }
+      if (file.size > 2 * 1024 * 1024) {
+        alert('ファイルサイズが大きすぎます。2MB以下の画像を選択してください。');
+        e.target.value = '';
+        return;
+      }
       setAttachedImageName(file.name);
       const reader = new FileReader();
       reader.onload = (ev) => {
@@ -152,13 +169,20 @@ const AttendancePage: NextPage = () => {
       alert('お題・アンケート内容を入力するか、画像を添付してください。');
       return;
     }
-    localStorage.setItem('monitorQuestion', question.trim());
-    if (attachedImage) {
-      localStorage.setItem('monitorImage', attachedImage);
-      if (attachedImageName) localStorage.setItem('monitorImageName', attachedImageName);
-    } else {
-      localStorage.removeItem('monitorImage');
-      localStorage.removeItem('monitorImageName');
+    
+    try {
+      localStorage.setItem('monitorQuestion', question.trim());
+      if (attachedImage) {
+        localStorage.setItem('monitorImage', attachedImage);
+        if (attachedImageName) localStorage.setItem('monitorImageName', attachedImageName);
+      } else {
+        localStorage.removeItem('monitorImage');
+        localStorage.removeItem('monitorImageName');
+      }
+    } catch (error) {
+      console.error('Storage quota exceeded or other error:', error);
+      alert('画像の保存に失敗しました。容量制限をオーバーしている可能性があります。');
+      return;
     }
     
     try {
