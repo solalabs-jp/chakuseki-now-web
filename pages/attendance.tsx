@@ -1,7 +1,7 @@
 
 import type { NextPage } from 'next';
 import { useRouter } from 'next/router';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import UserProfileButton from '../components/UserProfileButton';
 import { authHeaders } from '../lib/clientAuth';
 import styles from '../styles/Attendance.module.css';
@@ -96,17 +96,35 @@ type RealtimeStudent = {
 const AttendancePage: NextPage = () => {
   const router = useRouter();
   const [question, setQuestion] = useState('');
+  const [attachedImage, setAttachedImage] = useState<string | null>(null);
+  const [attachedImageName, setAttachedImageName] = useState<string | null>(null);
   const [isSent, setIsSent] = useState(false);
   const [stats, setStats] = useState<AttendanceStats | null>(null);
   const [students, setStudents] = useState<RealtimeStudent[]>([]);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
+    if (!router.isReady) return;
+
+    const classId = (router.query.classId as string) || 'class-2A';
+    const scheduleId = (router.query.scheduleId as string) || '';
+    const queryParams = new URLSearchParams({ classId });
+    if (scheduleId) queryParams.append('scheduleId', scheduleId);
+
     const saved = localStorage.getItem('monitorQuestion');
     if (saved) {
       setQuestion(saved);
     }
+    const savedImg = localStorage.getItem('monitorImage');
+    if (savedImg) {
+      setAttachedImage(savedImg);
+    }
+    const savedImgName = localStorage.getItem('monitorImageName');
+    if (savedImgName) {
+      setAttachedImageName(savedImgName);
+    }
 
-    fetch('/api/attendance/stats?classId=class-2A', { headers: authHeaders() })
+    fetch(`/api/attendance/stats?${queryParams.toString()}`, { headers: authHeaders() })
       .then((res) => res.json())
       .then((data) => {
         if (data.error) return;
@@ -114,24 +132,62 @@ const AttendancePage: NextPage = () => {
       })
       .catch(() => {});
 
-    fetch('/api/attendance/realtime?classId=class-2A', { headers: authHeaders() })
+    fetch(`/api/attendance/realtime?${queryParams.toString()}`, { headers: authHeaders() })
       .then((res) => res.json())
       .then((data) => {
         if (data.error) return;
         setStudents(data.students);
       })
       .catch(() => {});
-  }, []);
+  }, [router.isReady, router.query]);
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      if (!file.type.startsWith('image/')) {
+        alert('画像ファイルを選択してください。');
+        e.target.value = '';
+        return;
+      }
+      if (file.size > 2 * 1024 * 1024) {
+        alert('ファイルサイズが大きすぎます。2MB以下の画像を選択してください。');
+        e.target.value = '';
+        return;
+      }
+      setAttachedImageName(file.name);
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        setAttachedImage(ev.target?.result as string);
+      };
+      reader.readAsDataURL(file);
+    }
+    e.target.value = '';
+  };
 
   const handleSendToMonitor = () => {
-    if (!question.trim()) {
-      alert('お題・アンケート内容を入力してください。');
+    if (!question.trim() && !attachedImage) {
+      alert('お題・アンケート内容を入力するか、画像を添付してください。');
       return;
     }
-    localStorage.setItem('monitorQuestion', question.trim());
+    
+    try {
+      localStorage.setItem('monitorQuestion', question.trim());
+      if (attachedImage) {
+        localStorage.setItem('monitorImage', attachedImage);
+        if (attachedImageName) localStorage.setItem('monitorImageName', attachedImageName);
+      } else {
+        localStorage.removeItem('monitorImage');
+        localStorage.removeItem('monitorImageName');
+      }
+    } catch (error) {
+      console.error('Storage quota exceeded or other error:', error);
+      alert('画像の保存に失敗しました。容量制限をオーバーしている可能性があります。');
+      return;
+    }
+    
     try {
       const bc = new BroadcastChannel('monitor_channel');
-      bc.postMessage({ type: 'UPDATE_QUESTION', question: question.trim() });
+      bc.postMessage({ type: 'UPDATE_QUESTION', question: question.trim(), image: attachedImage });
       bc.close();
     } catch {}
 
@@ -205,7 +261,14 @@ const AttendancePage: NextPage = () => {
             onChange={(e) => setQuestion(e.target.value)}
           />
           <div className={styles.questionActions}>
-            <button className={styles.attachBtn}>
+            <input
+              type="file"
+              accept="image/*"
+              style={{ display: 'none' }}
+              ref={fileInputRef}
+              onChange={handleFileChange}
+            />
+            <button className={styles.attachBtn} onClick={() => fileInputRef.current?.click()}>
               <PaperclipIcon />
               添付
             </button>
@@ -214,6 +277,18 @@ const AttendancePage: NextPage = () => {
               {isSent ? 'モニターに反映完了！' : 'モニターに表示'}
             </button>
           </div>
+          {attachedImage && (
+            <div className={styles.fileNameWrapper}>
+              <PaperclipIcon />
+              <span className={styles.fileNameText}>{attachedImageName || '添付画像'}</span>
+              <button className={styles.removeFileBtn} onClick={() => {
+                setAttachedImage(null);
+                setAttachedImageName(null);
+              }}>
+                <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12"/></svg>
+              </button>
+            </div>
+          )}
         </div>
       </div>
 
