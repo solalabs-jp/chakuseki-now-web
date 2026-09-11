@@ -99,28 +99,68 @@ const AttendancePage: NextPage = () => {
   const [isSent, setIsSent] = useState(false);
   const [stats, setStats] = useState<AttendanceStats | null>(null);
   const [students, setStudents] = useState<RealtimeStudent[]>([]);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   useEffect(() => {
     const saved = localStorage.getItem('monitorQuestion');
     if (saved) {
       setQuestion(saved);
     }
+  }, []);
 
-    fetch('/api/attendance/stats?classId=class-2A', { headers: authHeaders() })
-      .then((res) => res.json())
-      .then((data) => {
-        if (data.error) return;
-        setStats(data);
-      })
-      .catch(() => {});
+  // 「LIVE」表示に対応する実データ更新。専用の購読 API が無いのでポーリングする。
+  // 出席リスト(realtime)は素早く反映したいので短間隔、上部の集計(stats)は
+  // 変化が緩やかなうえ読み取りが重いので長間隔に分ける。タブが非表示の間は
+  // Firestore 読み取りを止め、復帰時に即座に取り直す。
+  useEffect(() => {
+    const LIST_REFRESH_MS = 4000;
+    const STATS_REFRESH_MS = 30000;
+    let cancelled = false;
 
-    fetch('/api/attendance/realtime?classId=class-2A', { headers: authHeaders() })
-      .then((res) => res.json())
-      .then((data) => {
-        if (data.error) return;
-        setStudents(data.students);
-      })
-      .catch(() => {});
+    const loadStudents = () => {
+      fetch('/api/attendance/realtime?classId=class-2A', { headers: authHeaders() })
+        .then((res) => res.json())
+        .then((data) => {
+          if (cancelled || data.error) return;
+          setStudents(data.students);
+        })
+        .catch(() => {});
+    };
+
+    const loadStats = () => {
+      fetch('/api/attendance/stats?classId=class-2A', { headers: authHeaders() })
+        .then((res) => res.json())
+        .then((data) => {
+          if (cancelled || data.error) return;
+          setStats(data);
+        })
+        .catch(() => {});
+    };
+
+    loadStudents();
+    loadStats();
+
+    const listTimer = setInterval(() => {
+      if (document.visibilityState === 'visible') loadStudents();
+    }, LIST_REFRESH_MS);
+
+    const statsTimer = setInterval(() => {
+      if (document.visibilityState === 'visible') loadStats();
+    }, STATS_REFRESH_MS);
+
+    const onVisible = () => {
+      if (document.visibilityState !== 'visible') return;
+      loadStudents();
+      loadStats();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+
+    return () => {
+      cancelled = true;
+      clearInterval(listTimer);
+      clearInterval(statsTimer);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
   }, []);
 
   const handleSendToMonitor = () => {
@@ -139,6 +179,28 @@ const AttendancePage: NextPage = () => {
 
     setIsSent(true);
     setTimeout(() => setIsSent(false), 3000);
+  };
+
+  // 開発用: 出席履歴を1件削除する。
+  const handleDelete = (recordId: string) => {
+    if (!window.confirm('この出席履歴を削除しますか？（開発用・元に戻せません）')) {
+      return;
+    }
+    setDeletingId(recordId);
+    fetch(`/api/attendance/${encodeURIComponent(recordId)}`, {
+      method: 'DELETE',
+      headers: authHeaders(),
+    })
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.error) {
+          alert(`削除に失敗しました: ${data.error}`);
+          return;
+        }
+        setStudents((prev) => prev.filter((s) => s.recordId !== recordId));
+      })
+      .catch(() => alert('削除に失敗しました'))
+      .finally(() => setDeletingId(null));
   };
 
   // circle gauge
@@ -241,6 +303,7 @@ const AttendancePage: NextPage = () => {
               <th className={styles.th}>ステータス</th>
               <th className={styles.th}>打刻時間</th>
               <th className={styles.th}>コメント</th>
+              <th className={styles.th} aria-label="操作" />
             </tr>
           </thead>
           <tbody>
@@ -261,6 +324,16 @@ const AttendancePage: NextPage = () => {
                   <span className={s.comment ? styles.comment : styles.commentNone}>
                     {s.comment ?? 'コメントなし'}
                   </span>
+                </td>
+                <td className={styles.actionTd}>
+                  <button
+                    type="button"
+                    className={styles.deleteBtn}
+                    onClick={() => handleDelete(s.recordId)}
+                    disabled={deletingId === s.recordId}
+                  >
+                    {deletingId === s.recordId ? '削除中…' : '削除'}
+                  </button>
                 </td>
               </tr>
             ))}

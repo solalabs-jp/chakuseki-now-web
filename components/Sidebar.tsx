@@ -79,6 +79,12 @@ const navItems = [
     icon: <UsersIcon />,
   },
   {
+    label: '教員・BLE管理',
+    href: '/teachers',
+    activeFor: ['/teachers'],
+    icon: <UsersIcon />,
+  },
+  {
     label: '設定',
     href: '/settings',
     disabled: true,
@@ -93,7 +99,9 @@ export default function Sidebar() {
   return (
     <aside className={styles.sidebar}>
       <div className={styles.brand}>
-        <div className={styles.brandIcon}>着</div>
+        <div className={styles.brandIcon}>
+          <img src="/AppIcon.png" alt="着席なう" width={34} height={34} />
+        </div>
         <div className={styles.brandText}>
           <strong>着席なう</strong>
           <span>教員用ダッシュボード</span>

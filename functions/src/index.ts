@@ -1,17 +1,17 @@
-import { setGlobalOptions } from "firebase-functions";
-import { onRequest } from "firebase-functions/https";
-import { onSchedule } from "firebase-functions/scheduler";
+import {setGlobalOptions} from "firebase-functions";
+import {onRequest} from "firebase-functions/https";
+import {onSchedule} from "firebase-functions/scheduler";
 
 import * as logger from "firebase-functions/logger";
 import * as admin from "firebase-admin";
-import { FieldValue, Timestamp } from "firebase-admin/firestore";
+import {FieldValue, Timestamp} from "firebase-admin/firestore";
 import * as https from "https";
 import * as http from "http";
 
 admin.initializeApp();
 const db = admin.firestore();
 
-setGlobalOptions({ maxInstances: 10 });
+setGlobalOptions({maxInstances: 10});
 
 type BeaconRequestBody = {
   beaconId?: unknown;
@@ -63,6 +63,20 @@ type RegisterRequestBody = {
   password?: unknown;
   role?: unknown;
   classId?: unknown;
+  name?: unknown;
+  beaconId?: unknown;
+};
+
+type DeleteUserRequestBody = {
+  uid?: unknown;
+};
+
+type UpdateUserRequestBody = {
+  uid?: unknown;
+  email?: unknown;
+  name?: unknown;
+  classId?: unknown;
+  beaconId?: unknown;
 };
 
 type CreateCheckinQuestionRequestBody = {
@@ -193,13 +207,13 @@ export const loginWithEmailPassword = onRequest(async (request, response) => {
   const body = (request.body ?? {}) as LoginRequestBody;
 
   if (!isNonEmptyString(body.email) || !isNonEmptyString(body.password)) {
-    response.status(400).json({ error: "email and password are required." });
+    response.status(400).json({error: "email and password are required."});
     return;
   }
 
   if (!FIREBASE_API_KEY) {
     logger.error("FIREBASE_API_KEY is not set");
-    response.status(500).json({ error: "Server configuration error." });
+    response.status(500).json({error: "Server configuration error."});
     return;
   }
 
@@ -225,9 +239,9 @@ export const loginWithEmailPassword = onRequest(async (request, response) => {
         code === "INVALID_PASSWORD" ||
         code === "INVALID_LOGIN_CREDENTIALS"
       ) {
-        response.status(401).json({ error: "Invalid email or password." });
+        response.status(401).json({error: "Invalid email or password."});
       } else {
-        response.status(400).json({ error: code });
+        response.status(400).json({error: code});
       }
       return;
     }
@@ -249,7 +263,8 @@ export const loginWithEmailPassword = onRequest(async (request, response) => {
     if (directDoc.exists) {
       role = directDoc.data()?.role ?? null;
       userId = uid;
-      displayName = directDoc.data()?.name ?? directDoc.data()?.displayName ?? null;
+      displayName =
+        directDoc.data()?.name ?? directDoc.data()?.displayName ?? null;
       grade = directDoc.data()?.grade ?? null;
       className = directDoc.data()?.className ?? null;
       email = directDoc.data()?.email ?? null;
@@ -264,7 +279,8 @@ export const loginWithEmailPassword = onRequest(async (request, response) => {
         const matchedDoc = byEmailSnapshot.docs[0];
         role = matchedDoc.data()?.role ?? null;
         userId = matchedDoc.id;
-        displayName = matchedDoc.data()?.name ?? matchedDoc.data()?.displayName ?? null;
+        displayName =
+          matchedDoc.data()?.name ?? matchedDoc.data()?.displayName ?? null;
         grade = matchedDoc.data()?.grade ?? null;
         className = matchedDoc.data()?.className ?? null;
         email = matchedDoc.data()?.email ?? null;
@@ -277,7 +293,7 @@ export const loginWithEmailPassword = onRequest(async (request, response) => {
       return;
     }
 
-    logger.info("Login successful", { uid, role, structuredData: true });
+    logger.info("Login successful", {uid, role, structuredData: true});
 
     response.status(200).json({
       idToken,
@@ -292,8 +308,8 @@ export const loginWithEmailPassword = onRequest(async (request, response) => {
     });
   } catch (err: unknown) {
     const errObj = err as Record<string, unknown>;
-    logger.error("authLogin error", { error: errObj });
-    response.status(500).json({ error: "Internal server error." });
+    logger.error("authLogin error", {error: errObj});
+    response.status(500).json({error: "Internal server error."});
   }
 });
 
@@ -403,6 +419,9 @@ export const registerUser = onRequest(async (request, response) => {
     return;
   }
 
+  const callerUid = await requireTeacherCaller(request, response);
+  if (!callerUid) return;
+
   const body = (request.body ?? {}) as RegisterRequestBody;
 
   if (
@@ -412,6 +431,16 @@ export const registerUser = onRequest(async (request, response) => {
   ) {
     response.status(400).json({
       error: "email, password, and role are required.",
+    });
+    return;
+  }
+
+  // role は許可された値のみ受け付ける。任意文字列を許すと teacher
+  // アカウントから admin 相当のロールを持つユーザーを作成できてしまう。
+  const ALLOWED_ROLES = ["teacher", "student"];
+  if (!ALLOWED_ROLES.includes(body.role)) {
+    response.status(400).json({
+      error: `role must be one of: ${ALLOWED_ROLES.join(", ")}.`,
     });
     return;
   }
@@ -431,8 +460,48 @@ export const registerUser = onRequest(async (request, response) => {
     if (isNonEmptyString(body.classId)) {
       userData.classId = body.classId;
     }
+    if (isNonEmptyString(body.name)) {
+      userData.name = body.name;
+    }
+    const normalizedBeaconId = isNonEmptyString(body.beaconId) ?
+      normalizeBeaconId(body.beaconId) :
+      null;
+    if (normalizedBeaconId) {
+      userData.beaconId = body.beaconId;
+      // studentBeacon が全教員を読んでメモリ上で正規化・比較する代わりに
+      // 等価クエリで絞り込めるよう、正規化済みの値も保存しておく。
+      userData.normalizedBeaconId = normalizedBeaconId;
+    }
+    userData.email = body.email;
 
-    await db.collection("users").doc(userRecord.uid).set(userData);
+    // beaconId を指定した教員登録の場合、beaconClaims で他の教員と重複
+    // していないか原子的に確認する。registerUser は認証済み教員なら誰でも
+    // 直接POSTできる公開HTTPSエンドポイントであり、Next.js側
+    // (pages/api/teachers)の予約チェックだけでは迂回されてしまうため。
+    let claimedBeaconId = false;
+    if (normalizedBeaconId && body.role === "teacher") {
+      const claimed = await claimBeaconId(normalizedBeaconId, userRecord.uid);
+      if (!claimed) {
+        await admin.auth().deleteUser(userRecord.uid).catch(() => undefined);
+        response.status(409).json({
+          error: "このビーコンIDは既に他の教員に登録されています。",
+        });
+        return;
+      }
+      claimedBeaconId = true;
+    }
+
+    try {
+      await db.collection("users").doc(userRecord.uid).set(userData);
+    } catch (dbErr) {
+      // Firestore 書き込み失敗時は Auth アカウントを残さない(孤立防止)。
+      // 孤立すると同じメールでの再作成が常に409になり、UIから復旧できない。
+      if (claimedBeaconId && normalizedBeaconId) {
+        await releaseBeaconClaim(normalizedBeaconId);
+      }
+      await admin.auth().deleteUser(userRecord.uid).catch(() => undefined);
+      throw dbErr;
+    }
 
     logger.info("User registered successfully", {
       uid: userRecord.uid,
@@ -446,20 +515,307 @@ export const registerUser = onRequest(async (request, response) => {
     });
   } catch (err: unknown) {
     const errObj = err as Record<string, unknown>;
-    logger.error("Error registering user", { error: errObj });
+    logger.error("Error registering user", {error: errObj});
     if (String(errObj?.code) === "auth/email-already-exists") {
-      response.status(409).json({ error: "Email already exists." });
+      response.status(409).json({error: "Email already exists."});
     } else {
-      response.status(500).json({ error: "Internal server error." });
+      response.status(500).json({error: "Internal server error."});
+    }
+  }
+});
+
+/**
+ * POST /api/auth/delete-user
+ * Body: { uid: string }
+ * Response: { message: string }
+ *
+ * registerUserと対になる削除処理。Firebase Authアカウントと
+ * Firestoreのusersドキュメントの両方を削除する。
+ */
+export const deleteUser = onRequest(async (request, response) => {
+  setCorsHeaders(response);
+
+  if (request.method === "OPTIONS") {
+    response.status(204).send("");
+    return;
+  }
+
+  if (request.method === "GET") {
+    response.status(200).json({
+      message: "POST uid to delete the user.",
+      method: "POST",
+      path: "/api/auth/delete-user",
+      body: {uid: "abc123"},
+    });
+    return;
+  }
+
+  if (request.method !== "POST") {
+    response.set("Allow", "GET, POST, OPTIONS");
+    sendStatus(response, 405);
+    return;
+  }
+
+  const callerUid = await requireTeacherCaller(request, response);
+  if (!callerUid) return;
+
+  const body = (request.body ?? {}) as DeleteUserRequestBody;
+
+  if (!isNonEmptyString(body.uid)) {
+    response.status(400).json({error: "uid is required."});
+    return;
+  }
+
+  try {
+    const userSnap = await requireTeacherTarget(body.uid);
+    if (!userSnap) {
+      response.status(404).json({error: "Teacher not found."});
+      return;
+    }
+
+    const userEmail = userSnap.data()?.email as string | undefined;
+
+    // Authアカウントが既に存在しない場合はエラーにせず、Firestore側の
+    // 削除だけ進める(整合性を取り戻す操作として許容する)。
+    try {
+      await admin.auth().deleteUser(body.uid);
+    } catch (err: unknown) {
+      const errObj = err as Record<string, unknown>;
+      if (String(errObj?.code) !== "auth/user-not-found") {
+        throw err;
+      }
+      // Firestoreのdoc IDとAuth UIDが一致しない旧データでは、doc IDでの
+      // 削除がuser-not-foundになる。emailから実UIDを解決して孤立Authアカウント
+      // を残さないようにする。
+      if (isNonEmptyString(userEmail)) {
+        try {
+          const authUser = await admin.auth().getUserByEmail(userEmail);
+          await admin.auth().deleteUser(authUser.uid);
+          logger.warn("deleteUser: removed orphan Auth account via email", {
+            docId: body.uid,
+            authUid: authUser.uid,
+          });
+        } catch (lookupErr: unknown) {
+          const lookupErrObj = lookupErr as Record<string, unknown>;
+          if (String(lookupErrObj?.code) !== "auth/user-not-found") {
+            throw lookupErr;
+          }
+          logger.warn("deleteUser: no Auth account found for user", {
+            docId: body.uid,
+          });
+        }
+      } else {
+        logger.warn("deleteUser: Auth user not found and no email to resolve", {
+          docId: body.uid,
+        });
+      }
+    }
+
+    await db.collection("users").doc(body.uid).delete();
+
+    // 削除した教員が beaconId を持っていた場合、beaconClaims の予約を
+    // 解放する。deleteUser は認証済み教員なら誰でも直接POSTできる公開
+    // HTTPSエンドポイントであり、Next.js側(pages/api/teachers)の解放
+    // 処理を経由しない呼び出しだと予約が孤児として残ってしまうため、
+    // ここでも解放する。
+    const deletedNormalizedBeaconId = isNonEmptyString(
+      userSnap.data()?.normalizedBeaconId
+    ) ?
+      String(userSnap.data()?.normalizedBeaconId) :
+      isNonEmptyString(userSnap.data()?.beaconId) ?
+        normalizeBeaconId(String(userSnap.data()?.beaconId)) :
+        null;
+    if (deletedNormalizedBeaconId) {
+      await releaseBeaconClaim(deletedNormalizedBeaconId);
+    }
+
+    logger.info("User deleted successfully", {
+      uid: body.uid,
+      structuredData: true,
+    });
+
+    response.status(200).json({message: "User deleted successfully."});
+  } catch (err: unknown) {
+    logger.error("Error deleting user", {error: err});
+    response.status(500).json({error: "Internal server error."});
+  }
+});
+
+/**
+ * POST /api/auth/update-user
+ * Body: { uid: string, email?: string, name?: string, classId?: string,
+ *         beaconId?: string }
+ * Response: { message: string }
+ *
+ * emailが渡された場合はFirebase Authのメールも更新し、Firestoreの
+ * usersドキュメントとの乖離を防ぐ。他のフィールドはFirestoreのみ更新。
+ */
+export const updateUser = onRequest(async (request, response) => {
+  setCorsHeaders(response);
+
+  if (request.method === "OPTIONS") {
+    response.status(204).send("");
+    return;
+  }
+
+  if (request.method === "GET") {
+    response.status(200).json({
+      message: "POST uid and the fields to update.",
+      method: "POST",
+      path: "/api/auth/update-user",
+      body: {uid: "abc123", email: "new@example.com", name: "山田 太郎"},
+    });
+    return;
+  }
+
+  if (request.method !== "POST") {
+    response.set("Allow", "GET, POST, OPTIONS");
+    sendStatus(response, 405);
+    return;
+  }
+
+  const callerUid = await requireTeacherCaller(request, response);
+  if (!callerUid) return;
+
+  const body = (request.body ?? {}) as UpdateUserRequestBody;
+
+  if (!isNonEmptyString(body.uid)) {
+    response.status(400).json({error: "uid is required."});
+    return;
+  }
+
+  if (body.email !== undefined && !isNonEmptyString(body.email)) {
+    response.status(400).json({error: "email cannot be empty."});
+    return;
+  }
+
+  try {
+    // 操作対象が teacher であることを確認する(deleteUser と同様の理由)。
+    const targetSnap = await requireTeacherTarget(body.uid);
+    if (!targetSnap) {
+      response.status(404).json({error: "Teacher not found."});
+      return;
+    }
+
+    if (isNonEmptyString(body.email)) {
+      try {
+        await admin.auth().updateUser(body.uid, {email: body.email});
+      } catch (authErr: unknown) {
+        if (
+          String((authErr as Record<string, unknown>)?.code) !==
+          "auth/user-not-found"
+        ) {
+          throw authErr;
+        }
+        // doc ID と Auth UID が不一致の旧データ。Firestore に保存済みの
+        // 現メールアドレスから実 UID を解決し、Auth 側も必ず更新する。
+        // 解決できなければ Auth と Firestore が乖離して教員がログイン
+        // 不能になるため、更新せずエラーにする。
+        const currentEmail = targetSnap.data()?.email as string | undefined;
+        if (!isNonEmptyString(currentEmail)) {
+          throw authErr;
+        }
+        const authUser = await admin.auth().getUserByEmail(currentEmail);
+        await admin.auth().updateUser(authUser.uid, {email: body.email});
+        logger.warn("updateUser: resolved Auth UID via email for legacy doc", {
+          docId: body.uid,
+          authUid: authUser.uid,
+        });
+      }
+    }
+
+    // この教員が以前登録していた beaconId(あれば)。更新成功後、変更された
+    // 場合だけ古い予約を解放する。
+    const targetData = targetSnap.data() ?? {};
+    const previousNormalizedBeaconId = isNonEmptyString(
+      targetData.normalizedBeaconId
+    ) ?
+      String(targetData.normalizedBeaconId) :
+      isNonEmptyString(targetData.beaconId) ?
+        normalizeBeaconId(String(targetData.beaconId)) :
+        null;
+
+    let newNormalizedBeaconId: string | null = null;
+    let claimedNewBeaconId = false;
+
+    if (body.beaconId !== undefined) {
+      newNormalizedBeaconId = isNonEmptyString(body.beaconId) ?
+        normalizeBeaconId(String(body.beaconId)) :
+        null;
+
+      if (
+        newNormalizedBeaconId &&
+        newNormalizedBeaconId !== previousNormalizedBeaconId
+      ) {
+        // updateUser は認証済み教員なら誰でも直接POSTできる公開HTTPS
+        // エンドポイントであり、Next.js側(pages/api/teachers)の予約
+        // チェックだけでは迂回されてしまうため、ここでも beaconClaims
+        // による重複防止(1ビーコン=1教員)を保証する。
+        const claimed = await claimBeaconId(newNormalizedBeaconId, body.uid);
+        if (!claimed) {
+          response.status(409).json({
+            error: "このビーコンIDは既に他の教員に登録されています。",
+          });
+          return;
+        }
+        claimedNewBeaconId = true;
+      }
+    }
+
+    const update: Record<string, unknown> = {};
+    if (isNonEmptyString(body.email)) update.email = body.email;
+    if (body.name !== undefined) update.name = body.name;
+    if (body.classId !== undefined) update.classId = body.classId;
+    if (body.beaconId !== undefined) {
+      update.beaconId = body.beaconId;
+      update.normalizedBeaconId = newNormalizedBeaconId ?? FieldValue.delete();
+    }
+
+    if (Object.keys(update).length > 0) {
+      try {
+        await db.collection("users").doc(body.uid).set(update, {merge: true});
+      } catch (updateErr) {
+        if (claimedNewBeaconId && newNormalizedBeaconId) {
+          await releaseBeaconClaim(newNormalizedBeaconId);
+        }
+        throw updateErr;
+      }
+    }
+
+    // 旧 beaconId の予約は更新成功後に解放する(失敗時に巻き戻せるよう順序を保つ)。
+    if (
+      body.beaconId !== undefined &&
+      previousNormalizedBeaconId &&
+      previousNormalizedBeaconId !== newNormalizedBeaconId
+    ) {
+      await releaseBeaconClaim(previousNormalizedBeaconId);
+    }
+
+    logger.info("User updated successfully", {
+      uid: body.uid,
+      structuredData: true,
+    });
+
+    response.status(200).json({message: "User updated successfully."});
+  } catch (err: unknown) {
+    const errObj = err as Record<string, unknown>;
+    logger.error("Error updating user", {error: errObj});
+    if (String(errObj?.code) === "auth/email-already-exists") {
+      response.status(409).json({error: "Email already exists."});
+    } else if (String(errObj?.code) === "auth/user-not-found") {
+      response.status(404).json({error: "User not found."});
+    } else {
+      response.status(500).json({error: "Internal server error."});
     }
   }
 });
 
 /**
  * POST /api/teacher/question
- * Body: { sessionId: string, teacherId: string, questionText: string, isSkippable: boolean }
+ * Body: { sessionId: string, teacherId: string, questionText: string,
+ *         isSkippable: boolean }
  * Response: { message: string, questionId: string }
- * 
+ *
  * 毎授業の質問（チェックイン質問）を送信・保存するAPI
  * Firebase Authで先生の認証済みのセッションのみが利用できる。
  */
@@ -505,7 +861,7 @@ export const createCheckinQuestion = onRequest(async (request, response) => {
     !isNonEmptyString(body.questionText) ||
     typeof body.isSkippable !== "boolean"
   ) {
-    response.status(400).json({ error: "Invalid or missing parameters." });
+    response.status(400).json({error: "Invalid or missing parameters."});
     return;
   }
 
@@ -534,17 +890,39 @@ export const createCheckinQuestion = onRequest(async (request, response) => {
       message: "Question sent successfully.",
       questionId: questionRef.id,
     });
-
   } catch (error) {
     logger.error("Failed to save checkin question", error);
-    response.status(500).json({ error: "Internal server error." });
+    response.status(500).json({error: "Internal server error."});
   }
 });
 
 
 // ─── Student endpoints ───────────────────────────────────────────────────────
 
-export const studentBeacon = onRequest((request, response) => {
+/**
+ * Formats a BLE beacon ID as a standard UUID (8-4-4-4-12), so "01a2-B3.." /
+ * "01A2b3.." normalize to the same value before comparison.
+ *
+ * Keep this in sync with formatBeaconId in lib/beaconId.ts (Next.js side) —
+ * they can't share code directly since functions/ and the web app are
+ * separate packages, but both must agree on what counts as an equivalent
+ * beacon ID or matching breaks again.
+ * @param {string} value Raw beacon ID (any case, with or without dashes).
+ * @return {string} The normalized 8-4-4-4-12 hex UUID.
+ */
+function normalizeBeaconId(value: string): string {
+  const hex = value.replace(/[^0-9a-fA-F]/g, "").slice(0, 32).toUpperCase();
+  const groups = [
+    hex.slice(0, 8),
+    hex.slice(8, 12),
+    hex.slice(12, 16),
+    hex.slice(16, 20),
+    hex.slice(20, 32),
+  ].filter(Boolean);
+  return groups.join("-");
+}
+
+export const studentBeacon = onRequest(async (request, response) => {
   setCorsHeaders(response);
 
   if (request.method === "OPTIONS") {
@@ -587,12 +965,85 @@ export const studentBeacon = onRequest((request, response) => {
     return;
   }
 
-  logger.info("Student beacon received", {
-    beaconId: body.beaconId,
-    structuredData: true,
-  });
+  const scannedBeaconId = body.beaconId;
+  const normalizedScanned = normalizeBeaconId(scannedBeaconId);
 
-  sendStatus(response, 200);
+  try {
+    // 正規化済みの normalizedBeaconId で絞り込む(等価クエリ、O(1)読み取り)。
+    // registerUser/updateUser/teacherRegisterBeacon は書き込み時に必ず
+    // normalizedBeaconId も保存するが、それ以前に作成された教員ドキュメント
+    // にはこのフィールドが無い場合があるため、ヒットしなければ従来どおり
+    // 全件取得してメモリ上で正規化・比較するフォールバックを行う。
+    const indexedSnapshot = await db
+      .collection("users")
+      .where("role", "==", "teacher")
+      .where("normalizedBeaconId", "==", normalizedScanned)
+      .limit(1)
+      .get();
+
+    let matchedTeacher: FirebaseFirestore.QueryDocumentSnapshot | undefined =
+      indexedSnapshot.docs[0];
+
+    if (!matchedTeacher) {
+      const teachersSnapshot = await db
+        .collection("users")
+        .where("role", "==", "teacher")
+        .get();
+
+      matchedTeacher = teachersSnapshot.docs.find((doc) => {
+        const beaconId = doc.data().beaconId;
+        return (
+          isNonEmptyString(beaconId) &&
+          normalizeBeaconId(beaconId) === normalizedScanned
+        );
+      });
+    }
+
+    if (!matchedTeacher) {
+      logger.warn("Student beacon: no matching teacher", {
+        beaconId: scannedBeaconId,
+      });
+      // 未設定の部屋などビーコンが未登録でも、生徒クライアントとの
+      // 互換性のため200を返し、本文でmatched:falseを示す。
+      response.status(200).json({
+        matched: false,
+        message: "このビーコンIDに対応する先生が見つかりません。",
+      });
+      return;
+    }
+
+    const teacherName =
+      matchedTeacher.data().name ?? matchedTeacher.data().displayName ?? "";
+
+    await db.collection("beaconScans").add({
+      beaconId: scannedBeaconId,
+      teacherId: matchedTeacher.id,
+      teacherName,
+      location: body.location,
+      scannedAt: FieldValue.serverTimestamp(),
+    });
+
+    logger.info("Student beacon received and matched", {
+      beaconId: scannedBeaconId,
+      teacherId: matchedTeacher.id,
+      structuredData: true,
+    });
+
+    response.status(200).json({
+      matched: true,
+      message: "Beacon received.",
+      teacherId: matchedTeacher.id,
+      teacherName,
+    });
+  } catch (err) {
+    logger.error("Error processing student beacon", {error: err});
+    // 内部エラー時も生徒クライアント互換のため200を返す(未マッチ時に200へ
+    // 戻した修正と同じ理由)。記録漏れは次回ポーリングで回復する。
+    response.status(200).json({
+      matched: false,
+      message: "Beacon received.",
+    });
+  }
 });
 
 export const studentAnswer = onRequest((request, response) => {
@@ -753,7 +1204,7 @@ export const studentTimetable = onRequest(async (request, response) => {
   try {
     const userDoc = await db.collection("users").doc(uid).get();
     if (!userDoc.exists) {
-      response.status(404).json({ error: "User not found." });
+      response.status(404).json({error: "User not found."});
       return;
     }
 
@@ -761,7 +1212,7 @@ export const studentTimetable = onRequest(async (request, response) => {
     const classId = userData?.classId;
 
     if (!classId) {
-      response.status(404).json({ error: "User does not belong to any class." });
+      response.status(404).json({error: "User does not belong to any class."});
       return;
     }
 
@@ -787,8 +1238,8 @@ export const studentTimetable = onRequest(async (request, response) => {
     response.status(200).json(timetables);
   } catch (err) {
     const errObj = err as Record<string, unknown>;
-    logger.error("Error fetching timetable", { error: errObj });
-    response.status(500).json({ error: "Internal server error." });
+    logger.error("Error fetching timetable", {error: errObj});
+    response.status(500).json({error: "Internal server error."});
   }
 });
 
@@ -891,12 +1342,12 @@ export const teacherQuestion = onRequest(async (request, response) => {
     const questionRef = db.collection("CHECKIN_QUESTIONS").doc();
 
     await questionRef.set({
-      questionId: questionRef.id,            // ドキュメントIDをそのまま割り当て
-      sessionId: "dummy-session-id-001",    // 本来はリクエスト等から受け取る
-      teacherId: "dummy-teacher-id-001",    // 本来はセッション情報等から特定する
-      questionText: body.content,            // 先生が入力した質問文
-      isSkippable: false,                    // デフォルトはスキップ不可に設定
-      sentAt: FieldValue.serverTimestamp(),  // 送信日時
+      questionId: questionRef.id, // ドキュメントIDをそのまま割り当て
+      sessionId: "dummy-session-id-001", // 本来はリクエスト等から受け取る
+      teacherId: "dummy-teacher-id-001", // 本来はセッション情報等から特定する
+      questionText: body.content, // 先生が入力した質問文
+      isSkippable: false, // デフォルトはスキップ不可に設定
+      sentAt: FieldValue.serverTimestamp(), // 送信日時
     });
 
     logger.info("Teacher question created and saved to Firestore", {
@@ -909,7 +1360,7 @@ export const teacherQuestion = onRequest(async (request, response) => {
   } catch (error) {
     // データベース保存エラー時の処理
     logger.error("Failed to save question to Firestore", error);
-    response.status(500).json({ error: "Internal server error." });
+    response.status(500).json({error: "Internal server error."});
   }
 });
 
@@ -974,7 +1425,7 @@ export const teacherScheduleTeacher = onRequest(async (request, response) => {
     // 2. 操作元ユーザーの存在と教師権限チェック
     const userDoc = await db.collection("users").doc(operatingUserId).get();
     if (!userDoc.exists) {
-      response.status(404).json({ error: "Operating user not found." });
+      response.status(404).json({error: "Operating user not found."});
       return;
     }
     const userData = userDoc.data();
@@ -990,7 +1441,7 @@ export const teacherScheduleTeacher = onRequest(async (request, response) => {
     const sessionDoc = await sessionRef.get();
 
     if (!sessionDoc.exists) {
-      response.status(404).json({ error: "Daily session not found." });
+      response.status(404).json({error: "Daily session not found."});
       return;
     }
 
@@ -1006,7 +1457,7 @@ export const teacherScheduleTeacher = onRequest(async (request, response) => {
     // 4. 紐づく時間割（SCHEDULES）の取得
     const scheduleDoc = await db.collection("schedules").doc(scheduleId).get();
     if (!scheduleDoc.exists) {
-      response.status(404).json({ error: "Associated schedule not found." });
+      response.status(404).json({error: "Associated schedule not found."});
       return;
     }
 
@@ -1039,10 +1490,9 @@ export const teacherScheduleTeacher = onRequest(async (request, response) => {
     });
 
     response.status(204).send();
-
   } catch (err) {
-    logger.error("Error updating daily session teacher", { error: err });
-    response.status(500).json({ error: "Internal server error." });
+    logger.error("Error updating daily session teacher", {error: err});
+    response.status(500).json({error: "Internal server error."});
   }
 });
 
@@ -1083,6 +1533,72 @@ export const teacherAttendanceBook = onRequest((request, response) => {
 
   response.status(200).json(attendanceBookData);
 });
+
+/**
+ * beaconClaims/{normalizedBeaconId} の予約を解放する(pages/api/teachers 側の
+ * lib/beaconClaims.ts と同じ考え方)。既に無くても呼び出し元は失敗させない。
+ * @param {string} normalizedBeaconId 解放する予約の doc ID(正規化済み beaconId)。
+ * @return {Promise<void>} 完了を表す Promise。
+ */
+async function releaseBeaconClaim(normalizedBeaconId: string): Promise<void> {
+  try {
+    await db.collection("beaconClaims").doc(normalizedBeaconId).delete();
+  } catch (error) {
+    logger.error("releaseBeaconClaim failed", {normalizedBeaconId, error});
+  }
+}
+
+/**
+ * beaconClaims/{normalizedBeaconId} を teacherId 用に予約する(pages/api/teachers
+ * 側の lib/beaconClaims.ts と同じ考え方)。.create() は既存なら失敗するため、
+ * query してから write する非アトミックな実装が引き起こす TOCTOU レース
+ * (ほぼ同時の2リクエストが両方「重複なし」と判定してしまう)を避けられる。
+ *
+ * registerUser/updateUser/teacherRegisterBeacon はいずれも、認証済み教員の
+ * IDトークンさえあれば直接POSTできる公開HTTPSエンドポイントであり、
+ * Next.js側(pages/api/teachers)の予約チェックはこの関数自体を保護しない
+ * ため、ここでも同じ不変条件(1ビーコン=1教員)を保証する必要がある。
+ * @param {string} normalizedBeaconId 予約する doc ID(正規化済み beaconId)。
+ * @param {string} teacherId 予約者の uid。
+ * @return {Promise<boolean>} 予約できた(既に自分の予約だった場合を含む)か。
+ */
+async function claimBeaconId(
+  normalizedBeaconId: string,
+  teacherId: string
+): Promise<boolean> {
+  const claimRef = db.collection("beaconClaims").doc(normalizedBeaconId);
+  try {
+    await claimRef.create({
+      teacherId,
+      createdAt: FieldValue.serverTimestamp(),
+    });
+  } catch (createErr) {
+    // 既に予約が存在する。所有者が自分自身なら重複ではない。
+    const existingClaim = await claimRef.get();
+    const owner = existingClaim.exists ?
+      existingClaim.data()?.teacherId :
+      undefined;
+    if (owner !== teacherId) {
+      return false;
+    }
+  }
+
+  // beaconClaims 導入前に登録された beaconId とも衝突していないか確認する。
+  const legacySnapshot = await db
+    .collection("users")
+    .where("role", "==", "teacher")
+    .where("normalizedBeaconId", "==", normalizedBeaconId)
+    .get();
+  const legacyConflict = legacySnapshot.docs.some(
+    (doc) => doc.id !== teacherId
+  );
+  if (legacyConflict) {
+    await releaseBeaconClaim(normalizedBeaconId);
+    return false;
+  }
+
+  return true;
+}
 
 /**
  * POST /api/teacher/register-beacon
@@ -1193,12 +1709,61 @@ export const teacherRegisterBeacon = onRequest(async (request, response) => {
       return;
     }
 
+    const targetDocId = targetDocRef.id;
+    const normalizedBeaconId = normalizeBeaconId(beaconId);
+
+    // この教員が以前登録していた beaconId(あれば)。更新成功後、変更された
+    // 場合だけ古い予約を解放する。
+    const previousNormalizedBeaconId = isNonEmptyString(
+      targetDocData.normalizedBeaconId
+    ) ?
+      String(targetDocData.normalizedBeaconId) :
+      isNonEmptyString(targetDocData.beaconId) ?
+        normalizeBeaconId(String(targetDocData.beaconId)) :
+        null;
+
+    let claimedNewBeaconId = false;
+
+    if (normalizedBeaconId !== previousNormalizedBeaconId) {
+      // 他の教員が既に同じ(正規化後の)beaconIdを登録していないかを
+      // beaconClaims の原子的な予約で確認する(自分自身は除外)。
+      // studentBeacon 側は .where("normalizedBeaconId", "==", ...).limit(1)
+      // で「beaconId は教員間で一意」という前提に依存しており、重複登録を
+      // 許すとスキャンがどちらか一方の教員にしかマッチせず出席・授業記録が
+      // 誤帰属する。
+      const claimed = await claimBeaconId(normalizedBeaconId, targetDocId);
+      if (!claimed) {
+        response.status(409).json({
+          error: "このビーコンIDは既に他の教員に登録されています。",
+        });
+        return;
+      }
+
+      claimedNewBeaconId = true;
+    }
+
     // beaconId (および session) を更新
-    await targetDocRef.update({
-      session: session,
-      beaconId: beaconId,
-      updatedAt: FieldValue.serverTimestamp(),
-    });
+    try {
+      await targetDocRef.update({
+        session: session,
+        beaconId: beaconId,
+        normalizedBeaconId,
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+    } catch (updateErr) {
+      if (claimedNewBeaconId) {
+        await releaseBeaconClaim(normalizedBeaconId);
+      }
+      throw updateErr;
+    }
+
+    // 旧 beaconId の予約は更新成功後に解放する(失敗時に巻き戻せるよう順序を保つ)。
+    if (
+      previousNormalizedBeaconId &&
+      previousNormalizedBeaconId !== normalizedBeaconId
+    ) {
+      await releaseBeaconClaim(previousNormalizedBeaconId);
+    }
 
     logger.info("Teacher beacon registered successfully", {
       docId: targetDocRef.id,
@@ -1212,8 +1777,8 @@ export const teacherRegisterBeacon = onRequest(async (request, response) => {
       beaconId: beaconId,
     });
   } catch (err) {
-    logger.error("Error registering teacher beacon", { error: err });
-    response.status(500).json({ error: "Internal server error." });
+    logger.error("Error registering teacher beacon", {error: err});
+    response.status(500).json({error: "Internal server error."});
   }
 });
 
@@ -1229,7 +1794,7 @@ export const teacherRegisterBeacon = onRequest(async (request, response) => {
 export const generateDailySessions = onSchedule(
   {
     schedule: "0 6 * * 1-5", // 平日 毎朝 06:00 UTC (JST 15:00) → 下で timeZone 指定
-    timeZone: "Asia/Tokyo",  // JST 06:00 に実行
+    timeZone: "Asia/Tokyo", // JST 06:00 に実行
     region: "us-central1",
   },
   async () => {
@@ -1272,7 +1837,7 @@ export const generateDailySessions = onSchedule(
         .get();
 
       if (schedulesSnapshot.empty) {
-        logger.info("No schedules found for today.", { dayOfWeek });
+        logger.info("No schedules found for today.", {dayOfWeek});
         return;
       }
 
@@ -1300,7 +1865,8 @@ export const generateDailySessions = onSchedule(
         const sessionData = {
           scheduleId,
           classId: scheduleData.classId,
-          teacherId: scheduleData.teacherId, // デフォルトの教師をコピー
+          // デフォルトの教師をコピー(旧フィールドへのフォールバック)
+          teacherId: scheduleData.defaultTeacherId ?? scheduleData.teacherId,
           date: todayTimestamp,
           createdAt: FieldValue.serverTimestamp(),
         };
@@ -1316,7 +1882,7 @@ export const generateDailySessions = onSchedule(
         structuredData: true,
       });
     } catch (err) {
-      logger.error("Error generating daily sessions", { error: err });
+      logger.error("Error generating daily sessions", {error: err});
       throw err; // Cloud Scheduler にリトライさせる
     }
   }
@@ -1329,7 +1895,9 @@ export const generateDailySessions = onSchedule(
  * 手動トリガー用エンドポイント。
  * 指定日の dailySessions を生成する。
  */
-export const adminGenerateDailySessions = onRequest(async (request, response) => {
+export const adminGenerateDailySessions = onRequest(async (
+  request, response
+) => {
   setCorsHeaders(response);
 
   if (request.method === "OPTIONS") {
@@ -1364,7 +1932,7 @@ export const adminGenerateDailySessions = onRequest(async (request, response) =>
   if (isNonEmptyString(body.date)) {
     // YYYY-MM-DD 形式のバリデーション
     if (!/^\d{4}-\d{2}-\d{2}$/.test(body.date)) {
-      response.status(400).json({ error: "date must be YYYY-MM-DD format." });
+      response.status(400).json({error: "date must be YYYY-MM-DD format."});
       return;
     }
     targetDate = new Date(`${body.date}T00:00:00+09:00`);
@@ -1372,9 +1940,10 @@ export const adminGenerateDailySessions = onRequest(async (request, response) =>
     const now = new Date();
     const jstNowTime = now.getTime() + 9 * 60 * 60 * 1000;
     const jstNow = new Date(jstNowTime);
-    targetDate = new Date(
-      `${jstNow.getUTCFullYear()}-${String(jstNow.getUTCMonth() + 1).padStart(2, "0")}-${String(jstNow.getUTCDate()).padStart(2, "0")}T00:00:00+09:00`
-    );
+    const yyyy = jstNow.getUTCFullYear();
+    const mm = String(jstNow.getUTCMonth() + 1).padStart(2, "0");
+    const dd = String(jstNow.getUTCDate()).padStart(2, "0");
+    targetDate = new Date(`${yyyy}-${mm}-${dd}T00:00:00+09:00`);
   }
 
   // 常に JST で曜日を判定する (targetDate + 9 hours)
@@ -1383,15 +1952,18 @@ export const adminGenerateDailySessions = onRequest(async (request, response) =>
   const jsDay = jstDateForDay.getUTCDay();
 
   if (jsDay === 0 || jsDay === 6) {
-    response.status(400).json({ error: "Specified date is a weekend." });
+    response.status(400).json({error: "Specified date is a weekend."});
     return;
   }
 
   const dayOfWeek = jsDay; // 1=月 〜 5=金
   const todayTimestamp = Timestamp.fromDate(targetDate);
-  const dateStr = `${jstDateForDay.getUTCFullYear()}-${String(jstDateForDay.getUTCMonth() + 1).padStart(2, "0")}-${String(jstDateForDay.getUTCDate()).padStart(2, "0")}`;
+  const dsYyyy = jstDateForDay.getUTCFullYear();
+  const dsMm = String(jstDateForDay.getUTCMonth() + 1).padStart(2, "0");
+  const dsDd = String(jstDateForDay.getUTCDate()).padStart(2, "0");
+  const dateStr = `${dsYyyy}-${dsMm}-${dsDd}`;
 
-  logger.info("adminGenerateDailySessions info", { dateStr, dayOfWeek, jsDay });
+  logger.info("adminGenerateDailySessions info", {dateStr, dayOfWeek, jsDay});
 
   try {
     const schedulesSnapshot = await db
@@ -1400,7 +1972,11 @@ export const adminGenerateDailySessions = onRequest(async (request, response) =>
       .get();
 
     if (schedulesSnapshot.empty) {
-      response.status(200).json({ message: "No schedules for this day.", created: 0, skipped: 0 });
+      response.status(200).json({
+        message: "No schedules for this day.",
+        created: 0,
+        skipped: 0,
+      });
       return;
     }
 
@@ -1426,7 +2002,7 @@ export const adminGenerateDailySessions = onRequest(async (request, response) =>
       const sessionData = {
         scheduleId,
         classId: scheduleData.classId,
-        teacherId: scheduleData.teacherId,
+        teacherId: scheduleData.defaultTeacherId ?? scheduleData.teacherId,
         date: todayTimestamp,
         createdAt: FieldValue.serverTimestamp(),
       };
@@ -1443,8 +2019,8 @@ export const adminGenerateDailySessions = onRequest(async (request, response) =>
       skipped: skippedCount,
     });
   } catch (err) {
-    logger.error("Error generating daily sessions", { error: err });
-    response.status(500).json({ error: "Internal server error." });
+    logger.error("Error generating daily sessions", {error: err});
+    response.status(500).json({error: "Internal server error."});
   }
 });
 
@@ -1510,8 +2086,66 @@ const verifyToken = async (
     const errObj = err as Record<string, unknown>;
     logger.warn(
       "Token verification failed",
-      { error: errObj }
+      {error: errObj}
     );
     return null;
   }
+};
+
+/*
+ * registerUser/updateUser/deleteUserの保護用。これらはCloud FunctionsのURLに
+ * 直接POSTすれば誰でも呼べてしまうため、ラッパーのNext.js API(requireTeacher)
+ * とは別に、この関数自体でも呼び出し元がteacherロールでログイン済みかを検証する。
+ */
+const requireTeacherCaller = async (
+  request: FunctionRequest,
+  response: FunctionResponse
+): Promise<string | null> => {
+  const callerUid = await verifyToken(request);
+  if (!callerUid) {
+    response.status(401).json({error: "Authentication required."});
+    return null;
+  }
+
+  let callerDoc = await db.collection("users").doc(callerUid).get();
+  if (!callerDoc.exists) {
+    // uidがFirestoreのドキュメントIDと一致しない場合(シードデータ等)は
+    // emailで検索する。Next.js側のrequireTeacherと同じフォールバック。
+    try {
+      const authUser = await admin.auth().getUser(callerUid);
+      if (authUser.email) {
+        const byEmail = await db
+          .collection("users")
+          .where("email", "==", authUser.email)
+          .limit(1)
+          .get();
+        if (!byEmail.empty) {
+          callerDoc = byEmail.docs[0];
+        }
+      }
+    } catch (err) {
+      logger.warn("requireTeacherCaller: email fallback failed", {error: err});
+    }
+  }
+
+  if (!callerDoc.exists || callerDoc.data()?.role !== "teacher") {
+    response.status(403).json({error: "Teacher role required."});
+    return null;
+  }
+
+  return callerUid;
+};
+
+/*
+ * deleteUser/updateUser の保護用。呼び出し元が teacher であることに加え、
+ * 「操作対象」も teacher であることを確認する。これが無いと、teacher
+ * トークンを持つ誰でも任意ユーザー(生徒・他教員・管理者)を削除・改変
+ * できてしまう。
+ */
+const requireTeacherTarget = async (
+  uid: string
+): Promise<FirebaseFirestore.DocumentSnapshot | null> => {
+  const snap = await db.collection("users").doc(uid).get();
+  if (!snap.exists || snap.data()?.role !== "teacher") return null;
+  return snap;
 };

@@ -138,17 +138,45 @@ async function getAdcAccessToken(): Promise<string> {
   return token;
 }
 
+/**
+ * Firestore REST 呼び出しの認証ソースを選ぶ。
+ *  - "adc": 常に Application Default Credentials を使う(本番は App Hosting の
+ *    ランタイム SA、ローカルは `gcloud auth application-default login`)。
+ *    `firebase login` のトークンには一切触れないため
+ *    `firebase login --reauth` が不要になる。
+ *  - "cli": 常に `firebase login` のトークンを使う(従来の挙動)。
+ *  - 未設定 / "auto": CLI トークンがあれば優先し、無ければ ADC にフォールバック。
+ */
+const FIRESTORE_AUTH = (process.env.FIRESTORE_AUTH ?? "auto").toLowerCase();
+
 async function getAccessToken(): Promise<string> {
   if (cachedToken && cachedToken.expiresAt - Date.now() > 60_000) {
     return cachedToken.value;
   }
 
-  const cliToken = await getCliAccessToken();
-  if (cliToken) {
-    return cliToken;
+  if (FIRESTORE_AUTH === "adc") {
+    return getAdcAccessToken();
   }
 
-  return getAdcAccessToken();
+  let cliError: unknown;
+  try {
+    const cliToken = await getCliAccessToken();
+    if (cliToken) {
+      return cliToken;
+    }
+  } catch (err) {
+    // "cli" 固定時はそのまま失敗させる。auto 時は ADC を試す。
+    if (FIRESTORE_AUTH === "cli") throw err;
+    cliError = err;
+  }
+
+  try {
+    return await getAdcAccessToken();
+  } catch (adcError) {
+    // auto で CLI トークンが期限切れ等だった場合、そちらのエラーの方が
+    // ローカル開発者にとって対処しやすい(`firebase login --reauth`)。
+    throw cliError ?? adcError;
+  }
 }
 
 function fromFirestoreValue(value: FirestoreValue | undefined): unknown {
@@ -206,24 +234,235 @@ export async function getDocument(
 
 export async function listCollection(collectionName: string): Promise<FirestoreDoc[]> {
   const token = await getAccessToken();
-  const url = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents/${collectionName}`;
+  const baseUrl = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents/${collectionName}`;
+
+  const docs: FirestoreDoc[] = [];
+  let pageToken: string | undefined;
+
+  // Firestore REST の :list は 1 レスポンスあたり最大 ~300 件しか返さない。
+  // nextPageToken を辿って全ページを取得する(件数超過時の無言の切り詰め防止)。
+  do {
+    const url = new URL(baseUrl);
+    url.searchParams.set("pageSize", "300");
+    if (pageToken) url.searchParams.set("pageToken", pageToken);
+
+    const response = await fetch(url, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+
+    if (!response.ok) {
+      throw new Error(
+        `Failed to list ${collectionName}: ${response.status} ${await response.text()}`
+      );
+    }
+
+    const parsed = (await response.json()) as {
+      documents?: Array<{ name: string; fields?: Record<string, FirestoreValue> }>;
+      nextPageToken?: string;
+    };
+
+    for (const doc of parsed.documents ?? []) {
+      docs.push({
+        id: doc.name.split("/").pop() as string,
+        data: fromFirestoreFields(doc.fields ?? {}),
+      });
+    }
+
+    pageToken = parsed.nextPageToken;
+  } while (pageToken);
+
+  return docs;
+}
+
+function toFirestoreValue(value: unknown): FirestoreValue {
+  if (value === null || value === undefined) return { nullValue: null };
+  if (typeof value === "boolean") return { booleanValue: value };
+  if (typeof value === "number") {
+    return Number.isInteger(value) ? { integerValue: String(value) } : { doubleValue: value };
+  }
+  if (typeof value === "string") return { stringValue: value };
+  if (Array.isArray(value)) {
+    return { arrayValue: { values: value.map(toFirestoreValue) } };
+  }
+  if (value instanceof Date) {
+    return { timestampValue: value.toISOString() };
+  }
+  if (typeof value === "object") {
+    return { mapValue: { fields: toFirestoreFields(value as Record<string, unknown>) } };
+  }
+  return { stringValue: String(value) };
+}
+
+function toFirestoreFields(data: Record<string, unknown>): Record<string, FirestoreValue> {
+  const fields: Record<string, FirestoreValue> = {};
+  for (const [key, value] of Object.entries(data)) {
+    fields[key] = toFirestoreValue(value);
+  }
+  return fields;
+}
+
+/**
+ * 指定した docId でドキュメントを新規作成する。同じ docId のドキュメントが
+ * 既に存在する場合は Firestore 側が 409 (ALREADY_EXISTS) を返し、失敗する。
+ * upsertDocument(PATCH によるマージ)と異なりレース条件に強く、
+ * 「同じキーを持つドキュメントが同時に2つ作られる」ことを防ぎたい場面
+ * (例: 同一コマの重複登録防止)で使う。
+ */
+export async function createDocument(
+  collectionName: string,
+  docId: string,
+  data: Record<string, unknown>
+): Promise<{ created: true } | { created: false; alreadyExists: boolean }> {
+  const token = await getAccessToken();
+  const url = new URL(
+    `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents/${collectionName}`
+  );
+  url.searchParams.set("documentId", docId);
 
   const response = await fetch(url, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ fields: toFirestoreFields(data) }),
+  });
+
+  if (response.status === 409) {
+    return { created: false, alreadyExists: true };
+  }
+  if (!response.ok) {
+    throw new Error(
+      `Failed to create ${collectionName}/${docId}: ${response.status} ${await response.text()}`
+    );
+  }
+  return { created: true };
+}
+
+/**
+ * Merge-writes the given fields into a document, creating it if it doesn't
+ * exist yet. Fields not included in `data` are left untouched.
+ */
+export async function upsertDocument(
+  collectionName: string,
+  docId: string,
+  data: Record<string, unknown>
+): Promise<void> {
+  const token = await getAccessToken();
+  const updateMask = Object.keys(data)
+    .map((key) => `updateMask.fieldPaths=${encodeURIComponent(key)}`)
+    .join("&");
+  const url = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents/${collectionName}/${docId}?${updateMask}`;
+
+  const response = await fetch(url, {
+    method: "PATCH",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ fields: toFirestoreFields(data) }),
+  });
+
+  if (!response.ok) {
+    throw new Error(
+      `Failed to upsert ${collectionName}/${docId}: ${response.status} ${await response.text()}`
+    );
+  }
+}
+
+export type FieldFilterOp =
+  | "EQUAL"
+  | "LESS_THAN"
+  | "LESS_THAN_OR_EQUAL"
+  | "GREATER_THAN"
+  | "GREATER_THAN_OR_EQUAL";
+
+export type FieldFilterSpec = { field: string; op: FieldFilterOp; value: unknown };
+
+/**
+ * 複数の等価/範囲条件(AND)で絞り込んだドキュメントを取得する。
+ * queryCollection(単一の等価条件)の一般化版。「confirmedAt がある日の
+ * 範囲内」のような、等価クエリでは表現できない絞り込みに使う。
+ * 同一フィールドへの範囲条件だけの組み合わせなら複合インデックスは不要。
+ */
+export async function queryCollectionWhere(
+  collectionName: string,
+  filters: FieldFilterSpec[]
+): Promise<FirestoreDoc[]> {
+  const token = await getAccessToken();
+  const url = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents:runQuery`;
+
+  const fieldFilters = filters.map((f) => ({
+    fieldFilter: {
+      field: { fieldPath: f.field },
+      op: f.op,
+      value: toFirestoreValue(f.value),
+    },
+  }));
+  const where =
+    fieldFilters.length === 1
+      ? fieldFilters[0]
+      : { compositeFilter: { op: "AND", filters: fieldFilters } };
+
+  const response = await fetch(url, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      structuredQuery: {
+        from: [{ collectionId: collectionName }],
+        where,
+      },
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(
+      `Failed to query ${collectionName}: ${response.status} ${await response.text()}`
+    );
+  }
+
+  const parsed = (await response.json()) as Array<{
+    document?: { name: string; fields?: Record<string, FirestoreValue> };
+  }>;
+
+  return parsed
+    .filter((entry): entry is { document: { name: string; fields?: Record<string, FirestoreValue> } } =>
+      Boolean(entry.document)
+    )
+    .map((entry) => ({
+      id: entry.document.name.split("/").pop() as string,
+      data: fromFirestoreFields(entry.document.fields ?? {}),
+    }));
+}
+
+/**
+ * 単一フィールドの等価条件で絞り込んだドキュメントを取得する。
+ * listCollection と違い、対象コレクション全体を読まずに済むため、
+ * 特定 ID への参照有無だけを確認したいケースに向く。
+ */
+export async function queryCollection(
+  collectionName: string,
+  field: string,
+  value: unknown
+): Promise<FirestoreDoc[]> {
+  return queryCollectionWhere(collectionName, [{ field, op: "EQUAL", value }]);
+}
+
+export async function deleteDocument(collectionName: string, docId: string): Promise<void> {
+  const token = await getAccessToken();
+  const url = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents/${collectionName}/${docId}`;
+
+  const response = await fetch(url, {
+    method: "DELETE",
     headers: { Authorization: `Bearer ${token}` },
   });
 
   if (!response.ok) {
     throw new Error(
-      `Failed to list ${collectionName}: ${response.status} ${await response.text()}`
+      `Failed to delete ${collectionName}/${docId}: ${response.status} ${await response.text()}`
     );
   }
-
-  const parsed = (await response.json()) as {
-    documents?: Array<{ name: string; fields?: Record<string, FirestoreValue> }>;
-  };
-
-  return (parsed.documents ?? []).map((doc) => ({
-    id: doc.name.split("/").pop() as string,
-    data: fromFirestoreFields(doc.fields ?? {}),
-  }));
 }
