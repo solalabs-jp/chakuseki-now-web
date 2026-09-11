@@ -78,9 +78,13 @@ export async function reserveBeaconId(
   }
 
   // この予約レコードの仕組みを導入する前に登録された beaconId と衝突して
-  // いないかも確認する。保存済みの beaconId は常に formatBeaconId で正規化
-  // されているため、コレクション全体を読まずに等価クエリで判定できる。
-  const existingUsers = await queryCollection("users", "beaconId", normalizedBeaconId);
+  // いないかも確認する。beaconId フィールド自体は functions/src/index.ts の
+  // registerUser/teacherRegisterBeacon が呼び出し元の生の値をそのまま保存する
+  // ため正規化済みとは限らないが、normalizedBeaconId フィールドは
+  // registerUser/updateUser/teacherRegisterBeacon のいずれの書き込み経路でも
+  // 必ず normalizeBeaconId 済みの値が入るため、こちらを見ればコレクション
+  // 全体を読まずに等価クエリで正しく判定できる。
+  const existingUsers = await queryCollection("users", "normalizedBeaconId", normalizedBeaconId);
   const conflict = existingUsers.some(
     (u) => u.data.role === "teacher" && u.id !== teacherId
   );
