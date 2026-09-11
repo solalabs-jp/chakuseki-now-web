@@ -138,17 +138,45 @@ async function getAdcAccessToken(): Promise<string> {
   return token;
 }
 
+/**
+ * Firestore REST 呼び出しの認証ソースを選ぶ。
+ *  - "adc": 常に Application Default Credentials を使う(本番は App Hosting の
+ *    ランタイム SA、ローカルは `gcloud auth application-default login`)。
+ *    `firebase login` のトークンには一切触れないため
+ *    `firebase login --reauth` が不要になる。
+ *  - "cli": 常に `firebase login` のトークンを使う(従来の挙動)。
+ *  - 未設定 / "auto": CLI トークンがあれば優先し、無ければ ADC にフォールバック。
+ */
+const FIRESTORE_AUTH = (process.env.FIRESTORE_AUTH ?? "auto").toLowerCase();
+
 async function getAccessToken(): Promise<string> {
   if (cachedToken && cachedToken.expiresAt - Date.now() > 60_000) {
     return cachedToken.value;
   }
 
-  const cliToken = await getCliAccessToken();
-  if (cliToken) {
-    return cliToken;
+  if (FIRESTORE_AUTH === "adc") {
+    return getAdcAccessToken();
   }
 
-  return getAdcAccessToken();
+  let cliError: unknown;
+  try {
+    const cliToken = await getCliAccessToken();
+    if (cliToken) {
+      return cliToken;
+    }
+  } catch (err) {
+    // "cli" 固定時はそのまま失敗させる。auto 時は ADC を試す。
+    if (FIRESTORE_AUTH === "cli") throw err;
+    cliError = err;
+  }
+
+  try {
+    return await getAdcAccessToken();
+  } catch (adcError) {
+    // auto で CLI トークンが期限切れ等だった場合、そちらのエラーの方が
+    // ローカル開発者にとって対処しやすい(`firebase login --reauth`)。
+    throw cliError ?? adcError;
+  }
 }
 
 function fromFirestoreValue(value: FirestoreValue | undefined): unknown {
