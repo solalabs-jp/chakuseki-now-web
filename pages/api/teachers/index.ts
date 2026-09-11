@@ -3,6 +3,11 @@ import { listCollection } from "../../../lib/firestoreRest";
 import { requireTeacher } from "../../../lib/auth";
 import { DEFAULT_PASSWORD, registerAuthUser } from "../../../lib/registerAuthUser";
 import { formatBeaconId } from "../../../lib/beaconId";
+import {
+  assignBeaconClaim,
+  releaseBeaconClaim,
+  reserveBeaconId,
+} from "../../../lib/beaconClaims";
 
 type TeacherInput = {
   name?: unknown;
@@ -57,25 +62,25 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       return;
     }
 
+    // 他の教員が既に同じ(正規化後の)beaconIdを登録していないか確認する。
+    // 重複を許すと studentBeacon 側の検索がどちらか一方(Firestoreが
+    // 返す順序に依存)にしかマッチせず、出席スキャンが誤帰属する。
+    const normalizedBeaconId = isNonEmptyString(body.beaconId)
+      ? formatBeaconId(body.beaconId)
+      : undefined;
+    // 予約に成功したあと後続処理が失敗したら解放するため、予約済みかを覚えておく。
+    let reservedBeaconId: string | null = null;
+
     try {
-      // 他の教員が既に同じ(正規化後の)beaconIdを登録していないか確認する。
-      // 重複を許すと studentBeacon 側の検索がどちらか一方(Firestoreが
-      // 返す順序に依存)にしかマッチせず、出席スキャンが誤帰属する。
-      const normalizedBeaconId = isNonEmptyString(body.beaconId)
-        ? formatBeaconId(body.beaconId)
-        : undefined;
       if (normalizedBeaconId) {
-        const existingUsers = await listCollection("users");
-        const duplicate = existingUsers.find(
-          (u) =>
-            u.data.role === "teacher" &&
-            isNonEmptyString(u.data.beaconId) &&
-            formatBeaconId(String(u.data.beaconId)) === normalizedBeaconId
-        );
-        if (duplicate) {
+        // listCollection を読んでから書き込むまでの TOCTOU レースを避けるため、
+        // 正規化後の beaconId を doc ID にした予約レコードを原子的に作成する。
+        const reserved = await reserveBeaconId(normalizedBeaconId, "");
+        if (!reserved.ok) {
           res.status(409).json({ error: "このビーコンIDは既に他の教員に登録されています。" });
           return;
         }
+        reservedBeaconId = normalizedBeaconId;
       }
 
       const result = await registerAuthUser(
@@ -90,12 +95,18 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         authHeader
       );
       if ("error" in result) {
+        if (reservedBeaconId) await releaseBeaconClaim(reservedBeaconId);
         console.error("teachers POST: registerAuthUser failed", result.status, result.error);
         res.status(result.status).json({ error: result.error });
         return;
       }
+
+      // 採番された uid を予約レコードに書き込んで確定させる。
+      if (reservedBeaconId) await assignBeaconClaim(reservedBeaconId, result.uid);
+
       res.status(201).json({ id: result.uid });
     } catch (error) {
+      if (reservedBeaconId) await releaseBeaconClaim(reservedBeaconId);
       console.error("teachers POST error", error);
       res.status(500).json({ error: error instanceof Error ? error.message : "Unknown error" });
     }

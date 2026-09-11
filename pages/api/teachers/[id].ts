@@ -2,7 +2,8 @@ import type { NextApiRequest, NextApiResponse } from "next";
 import { requireTeacher } from "../../../lib/auth";
 import { formatBeaconId } from "../../../lib/beaconId";
 import { deleteAuthUser, updateAuthUser } from "../../../lib/registerAuthUser";
-import { getDocument, listCollection } from "../../../lib/firestoreRest";
+import { getDocument } from "../../../lib/firestoreRest";
+import { releaseBeaconClaim, reserveBeaconId } from "../../../lib/beaconClaims";
 
 type TeacherInput = {
   name?: unknown;
@@ -67,6 +68,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     uid: id,
   };
   let hasUpdate = false;
+  // beaconId を変更する場合、更新成功後に解放する旧予約と、更新失敗時に
+  // 巻き戻す新予約を覚えておく。
+  let beaconClaimToRelease: string | null = null;
+  let beaconClaimToRollback: string | null = null;
 
   if (body.name !== undefined) {
     update.name = String(body.name);
@@ -84,22 +89,25 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const normalizedBeaconId = isNonEmptyString(body.beaconId)
       ? formatBeaconId(body.beaconId)
       : "";
+    const currentBeaconId = isNonEmptyString(target.data.beaconId)
+      ? formatBeaconId(String(target.data.beaconId))
+      : "";
 
-    if (normalizedBeaconId) {
-      // 他の教員が既に同じ(正規化後の)beaconIdを登録していないか確認する
-      // (自分自身は除外)。理由は POST 側と同じ(誤帰属の防止)。
-      const existingUsers = await listCollection("users");
-      const duplicate = existingUsers.find(
-        (u) =>
-          u.id !== id &&
-          u.data.role === "teacher" &&
-          isNonEmptyString(u.data.beaconId) &&
-          formatBeaconId(String(u.data.beaconId)) === normalizedBeaconId
-      );
-      if (duplicate) {
-        res.status(409).json({ error: "このビーコンIDは既に他の教員に登録されています。" });
-        return;
+    if (normalizedBeaconId !== currentBeaconId) {
+      if (normalizedBeaconId) {
+        // 他の教員が既に同じ beaconId を登録していないかを、正規化後の
+        // beaconId を doc ID にした予約レコードの原子的な作成で確認する
+        // (自分自身は除外)。listCollection の読み取り→書き込み分離による
+        // TOCTOU レースを避けるため。理由は POST 側と同じ(誤帰属の防止)。
+        const reserved = await reserveBeaconId(normalizedBeaconId, id);
+        if (!reserved.ok) {
+          res.status(409).json({ error: "このビーコンIDは既に他の教員に登録されています。" });
+          return;
+        }
+        beaconClaimToRollback = normalizedBeaconId;
       }
+      // 旧予約はユーザー更新が成功してから解放する(失敗時に巻き戻せるよう順序を保つ)。
+      beaconClaimToRelease = currentBeaconId || null;
     }
 
     update.beaconId = normalizedBeaconId;
@@ -114,11 +122,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   try {
     const result = await updateAuthUser(update, authHeader);
     if ("error" in result) {
+      if (beaconClaimToRollback) await releaseBeaconClaim(beaconClaimToRollback);
       res.status(result.status).json({ error: result.error });
       return;
     }
+    if (beaconClaimToRelease) await releaseBeaconClaim(beaconClaimToRelease);
     res.status(200).json({ id });
   } catch (error) {
+    if (beaconClaimToRollback) await releaseBeaconClaim(beaconClaimToRollback);
     console.error("teachers PATCH error", error);
     res.status(500).json({ error: error instanceof Error ? error.message : "Unknown error" });
   }
