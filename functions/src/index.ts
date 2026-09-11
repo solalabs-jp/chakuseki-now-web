@@ -1546,11 +1546,34 @@ export const teacherRegisterBeacon = onRequest(async (request, response) => {
       return;
     }
 
+    const normalizedBeaconId = normalizeBeaconId(beaconId);
+
+    // 他の教員が既に同じ(正規化後の)beaconIdを登録していないか確認する。
+    // studentBeacon 側は .where("normalizedBeaconId", "==", ...).limit(1) で
+    // 「beaconId は教員間で一意」という前提に依存しているため、重複登録を
+    // 許すとスキャンがどちらか一方の教員にしかマッチせず、出席・授業記録が
+    // 誤帰属する(pages/api/teachers 側と同じ理由)。
+    const duplicateSnapshot = await db
+      .collection("users")
+      .where("role", "==", "teacher")
+      .where("normalizedBeaconId", "==", normalizedBeaconId)
+      .get();
+    const targetDocId = targetDocRef.id;
+    const duplicate = duplicateSnapshot.docs.find(
+      (doc) => doc.id !== targetDocId
+    );
+    if (duplicate) {
+      response.status(409).json({
+        error: "このビーコンIDは既に他の教員に登録されています。",
+      });
+      return;
+    }
+
     // beaconId (および session) を更新
     await targetDocRef.update({
       session: session,
       beaconId: beaconId,
-      normalizedBeaconId: normalizeBeaconId(beaconId),
+      normalizedBeaconId,
       updatedAt: FieldValue.serverTimestamp(),
     });
 
