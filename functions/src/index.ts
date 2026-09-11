@@ -7,6 +7,7 @@ import * as admin from "firebase-admin";
 import {FieldValue, Timestamp} from "firebase-admin/firestore";
 import * as https from "https";
 import * as http from "http";
+import {formatBeaconId} from "./beaconId";
 
 admin.initializeApp();
 const db = admin.firestore();
@@ -478,27 +479,27 @@ export const registerUser = onRequest(async (request, response) => {
     // していないか原子的に確認する。registerUser は認証済み教員なら誰でも
     // 直接POSTできる公開HTTPSエンドポイントであり、Next.js側
     // (pages/api/teachers)の予約チェックだけでは迂回されてしまうため。
-    let claimedBeaconId = false;
-    if (normalizedBeaconId && body.role === "teacher") {
-      const claimed = await claimBeaconId(normalizedBeaconId, userRecord.uid);
-      if (!claimed) {
+    // 新規ユーザーなので旧クレームは無く(previous=null)、student には
+    // beaconClaims の一意性を課さない(claim対象IDは teacher のみ)。
+    try {
+      const reassigned = await reassignBeaconClaim(
+        userRecord.uid,
+        null,
+        body.role === "teacher" ? normalizedBeaconId : null,
+        () => db.collection("users").doc(userRecord.uid).set(userData),
+        {adoptPlaceholder: true}
+      );
+      if (!reassigned) {
         await admin.auth().deleteUser(userRecord.uid).catch(() => undefined);
         response.status(409).json({
           error: "このビーコンIDは既に他の教員に登録されています。",
         });
         return;
       }
-      claimedBeaconId = true;
-    }
-
-    try {
-      await db.collection("users").doc(userRecord.uid).set(userData);
     } catch (dbErr) {
       // Firestore 書き込み失敗時は Auth アカウントを残さない(孤立防止)。
       // 孤立すると同じメールでの再作成が常に409になり、UIから復旧できない。
-      if (claimedBeaconId && normalizedBeaconId) {
-        await releaseBeaconClaim(normalizedBeaconId);
-      }
+      // (確保済みの新クレームは reassignBeaconClaim 内で解放済み)
       await admin.auth().deleteUser(userRecord.uid).catch(() => undefined);
       throw dbErr;
     }
@@ -724,43 +725,16 @@ export const updateUser = onRequest(async (request, response) => {
       }
     }
 
-    // この教員が以前登録していた beaconId(あれば)。更新成功後、変更された
-    // 場合だけ古い予約を解放する。
+    // この教員が以前登録していた beaconId(あれば)。beaconId が今回の
+    // リクエストで指定されていなければ変更なし(previous と同値)として扱う。
     const targetData = targetSnap.data() ?? {};
-    const previousNormalizedBeaconId = isNonEmptyString(
-      targetData.normalizedBeaconId
-    ) ?
-      String(targetData.normalizedBeaconId) :
-      isNonEmptyString(targetData.beaconId) ?
-        normalizeBeaconId(String(targetData.beaconId)) :
-        null;
-
-    let newNormalizedBeaconId: string | null = null;
-    let claimedNewBeaconId = false;
-
-    if (body.beaconId !== undefined) {
-      newNormalizedBeaconId = isNonEmptyString(body.beaconId) ?
+    const previousNormalizedBeaconId =
+      resolvePreviousNormalizedBeaconId(targetData);
+    const newNormalizedBeaconId = body.beaconId === undefined ?
+      previousNormalizedBeaconId :
+      isNonEmptyString(body.beaconId) ?
         normalizeBeaconId(String(body.beaconId)) :
         null;
-
-      if (
-        newNormalizedBeaconId &&
-        newNormalizedBeaconId !== previousNormalizedBeaconId
-      ) {
-        // updateUser は認証済み教員なら誰でも直接POSTできる公開HTTPS
-        // エンドポイントであり、Next.js側(pages/api/teachers)の予約
-        // チェックだけでは迂回されてしまうため、ここでも beaconClaims
-        // による重複防止(1ビーコン=1教員)を保証する。
-        const claimed = await claimBeaconId(newNormalizedBeaconId, body.uid);
-        if (!claimed) {
-          response.status(409).json({
-            error: "このビーコンIDは既に他の教員に登録されています。",
-          });
-          return;
-        }
-        claimedNewBeaconId = true;
-      }
-    }
 
     const update: Record<string, unknown> = {};
     if (isNonEmptyString(body.email)) update.email = body.email;
@@ -771,24 +745,26 @@ export const updateUser = onRequest(async (request, response) => {
       update.normalizedBeaconId = newNormalizedBeaconId ?? FieldValue.delete();
     }
 
-    if (Object.keys(update).length > 0) {
-      try {
-        await db.collection("users").doc(body.uid).set(update, {merge: true});
-      } catch (updateErr) {
-        if (claimedNewBeaconId && newNormalizedBeaconId) {
-          await releaseBeaconClaim(newNormalizedBeaconId);
+    // updateUser は認証済み教員なら誰でも直接POSTできる公開HTTPS
+    // エンドポイントであり、Next.js側(pages/api/teachers)の予約
+    // チェックだけでは迂回されてしまうため、ここでも beaconClaims
+    // による重複防止(1ビーコン=1教員)を保証する。
+    const uid = body.uid;
+    const reassigned = await reassignBeaconClaim(
+      uid,
+      previousNormalizedBeaconId,
+      newNormalizedBeaconId,
+      async () => {
+        if (Object.keys(update).length > 0) {
+          await db.collection("users").doc(uid).set(update, {merge: true});
         }
-        throw updateErr;
       }
-    }
-
-    // 旧 beaconId の予約は更新成功後に解放する(失敗時に巻き戻せるよう順序を保つ)。
-    if (
-      body.beaconId !== undefined &&
-      previousNormalizedBeaconId &&
-      previousNormalizedBeaconId !== newNormalizedBeaconId
-    ) {
-      await releaseBeaconClaim(previousNormalizedBeaconId);
+    );
+    if (!reassigned) {
+      response.status(409).json({
+        error: "このビーコンIDは既に他の教員に登録されています。",
+      });
+      return;
     }
 
     logger.info("User updated successfully", {
@@ -899,28 +875,12 @@ export const createCheckinQuestion = onRequest(async (request, response) => {
 
 // ─── Student endpoints ───────────────────────────────────────────────────────
 
-/**
- * Formats a BLE beacon ID as a standard UUID (8-4-4-4-12), so "01a2-B3.." /
- * "01A2b3.." normalize to the same value before comparison.
- *
- * Keep this in sync with formatBeaconId in lib/beaconId.ts (Next.js side) —
- * they can't share code directly since functions/ and the web app are
- * separate packages, but both must agree on what counts as an equivalent
- * beacon ID or matching breaks again.
- * @param {string} value Raw beacon ID (any case, with or without dashes).
- * @return {string} The normalized 8-4-4-4-12 hex UUID.
- */
-function normalizeBeaconId(value: string): string {
-  const hex = value.replace(/[^0-9a-fA-F]/g, "").slice(0, 32).toUpperCase();
-  const groups = [
-    hex.slice(0, 8),
-    hex.slice(8, 12),
-    hex.slice(12, 16),
-    hex.slice(16, 20),
-    hex.slice(20, 32),
-  ].filter(Boolean);
-  return groups.join("-");
-}
+// normalizeBeaconId = formatBeaconId from lib/beaconId.ts (Next.js side).
+// functions/src/beaconId.ts is a symlink to that file — both runtimes ship
+// from a single implementation instead of two copies kept in sync by hand
+// (a past mismatch between hand-synced copies caused a beaconId matching
+// bug, fixed in 7a1ce93).
+const normalizeBeaconId = formatBeaconId;
 
 export const studentBeacon = onRequest(async (request, response) => {
   setCorsHeaders(response);
@@ -1560,41 +1520,169 @@ async function releaseBeaconClaim(normalizedBeaconId: string): Promise<void> {
  * ため、ここでも同じ不変条件(1ビーコン=1教員)を保証する必要がある。
  * @param {string} normalizedBeaconId 予約する doc ID(正規化済み beaconId)。
  * @param {string} teacherId 予約者の uid。
+ * @param {object} options オプション。
+ * @param {boolean} [options.adoptPlaceholder] true の場合、owner="" の
+ *   プレースホルダ予約(pages/api/teachers が uid 採番前に作るもの)を
+ *   自分自身の予約とみなして実 uid で確定させる。registerUser からのみ
+ *   true を渡す。
  * @return {Promise<boolean>} 予約できた(既に自分の予約だった場合を含む)か。
  */
 async function claimBeaconId(
   normalizedBeaconId: string,
-  teacherId: string
+  teacherId: string,
+  options: { adoptPlaceholder?: boolean } = {}
 ): Promise<boolean> {
   const claimRef = db.collection("beaconClaims").doc(normalizedBeaconId);
+  // このIDについて一度でもレガシー衝突チェック(下記)を通過済みなら、以後の
+  // 呼び出し(同じ教員による再確認・再代入)では省略してよい。beaconClaims
+  // 導入前の users ドキュメントは既存データであり増えることはないため、
+  // 一度クリアなら以後もクリアなまま。
+  let needsLegacyCheck = true;
   try {
     await claimRef.create({
       teacherId,
       createdAt: FieldValue.serverTimestamp(),
+      legacyChecked: false,
     });
   } catch (createErr) {
+    // create() は既存ドキュメントがある場合 ALREADY_EXISTS(code 6) で
+    // 失敗する。それ以外(ネットワーク/権限エラー等の一時的な失敗)は
+    // 「既存クレームあり」と誤判定せず、そのまま呼び出し元に投げて
+    // 500 として扱う(ここで false を返すとビーコンが空いているのに
+    // 409 を返してしまう)。
+    if ((createErr as { code?: number })?.code !== 6) {
+      throw createErr;
+    }
+
     // 既に予約が存在する。所有者が自分自身なら重複ではない。
     const existingClaim = await claimRef.get();
-    const owner = existingClaim.exists ?
-      existingClaim.data()?.teacherId :
-      undefined;
+    const existingData = existingClaim.data();
+    const owner = existingClaim.exists ? existingData?.teacherId : undefined;
     if (owner !== teacherId) {
-      return false;
+      // pages/api/teachers の新規登録は uid 採番前に teacherId="" の
+      // プレースホルダで beaconClaims を予約してから registerUser を呼ぶ。
+      // このときの owner="" は他の教員との競合ではなく自分自身の予約な
+      // ので、adoptPlaceholder=true(registerUser からの呼び出し)の場合
+      // に限り実際の teacherId で確定させる。他の呼び出し元
+      // (updateUser/teacherRegisterBeacon)は既存の実 uid に対して更新
+      // するだけで、この二段階予約パターンを使わないため対象外。
+      if (options.adoptPlaceholder && owner === "") {
+        await claimRef.set(
+          {teacherId, createdAt: FieldValue.serverTimestamp()},
+          {merge: true}
+        );
+      } else {
+        return false;
+      }
+    } else {
+      // 既に自分自身の確定済みクレームだった場合、過去にレガシーチェック
+      // 済みならクエリを省略する(users への読み取りが倍増するのを防ぐ)。
+      needsLegacyCheck = existingData?.legacyChecked !== true;
     }
   }
 
-  // beaconClaims 導入前に登録された beaconId とも衝突していないか確認する。
-  const legacySnapshot = await db
-    .collection("users")
-    .where("role", "==", "teacher")
-    .where("normalizedBeaconId", "==", normalizedBeaconId)
-    .get();
-  const legacyConflict = legacySnapshot.docs.some(
-    (doc) => doc.id !== teacherId
-  );
-  if (legacyConflict) {
-    await releaseBeaconClaim(normalizedBeaconId);
-    return false;
+  if (needsLegacyCheck) {
+    // beaconClaims 導入前に登録された beaconId とも衝突していないか確認する。
+    const legacySnapshot = await db
+      .collection("users")
+      .where("role", "==", "teacher")
+      .where("normalizedBeaconId", "==", normalizedBeaconId)
+      .get();
+    const legacyConflict = legacySnapshot.docs.some(
+      (doc) => doc.id !== teacherId
+    );
+    if (legacyConflict) {
+      await releaseBeaconClaim(normalizedBeaconId);
+      return false;
+    }
+
+    await claimRef.set({legacyChecked: true}, {merge: true});
+  }
+
+  return true;
+}
+
+/**
+ * users ドキュメントに保存されている(かもしれない)beaconId を正規化して
+ * 返す。normalizedBeaconId フィールドがあればそれを優先し、無ければ
+ * beaconId フィールドから改めて正規化する(beaconClaims 導入前のレガシー
+ * データ対応)。updateUser/teacherRegisterBeacon の両方で「更新前の
+ * beaconId」を求めるのに使う。
+ * @param {admin.firestore.DocumentData} data users ドキュメントのデータ。
+ * @return {string | null} 正規化済み beaconId。未登録なら null。
+ */
+function resolvePreviousNormalizedBeaconId(
+  data: admin.firestore.DocumentData
+): string | null {
+  if (isNonEmptyString(data.normalizedBeaconId)) {
+    return String(data.normalizedBeaconId);
+  }
+  if (isNonEmptyString(data.beaconId)) {
+    return normalizeBeaconId(String(data.beaconId));
+  }
+  return null;
+}
+
+/**
+ * beaconId の再割り当てを「新IDを原子的に確保 → 書き込み → 旧IDを解放
+ * (失敗時は確保した新IDを解放)」という1つの不変条件の下で行う共通処理。
+ * registerUser/updateUser/teacherRegisterBeacon はいずれもこの手順を
+ * 個別に実装していたため、プレースホルダー孤立化・表記ゆれ・原子的予約
+ * 漏れといった同種の修正が一部の呼び出し箇所にしか反映されないリスクが
+ * あった。ここに集約し、以後の修正は1箇所で済むようにする。
+ * @param {string} teacherId クレームを保持する uid。
+ * @param {string | null} previousNormalizedBeaconId 更新前の正規化済み
+ *   beaconId(未登録なら null)。
+ * @param {string | null} newNormalizedBeaconId 更新後の正規化済み
+ *   beaconId(変更なし、またはクリアする場合は previousNormalizedBeaconId
+ *   と同じ値 / null を渡す)。
+ * @param {function(): Promise<unknown>} write 新IDの確保後に実行する Firestore
+ *   書き込み。失敗した場合は確保した新IDを解放してから例外を再送出する。
+ * @param {object} [options] claimBeaconId に渡すオプション。
+ * @param {boolean} [options.adoptPlaceholder] claimBeaconId 参照。
+ * @return {Promise<boolean>} 新IDが既に他の教員に登録されていて確保
+ *   できなかった場合は false(write は呼ばれない)。それ以外は true。
+ */
+async function reassignBeaconClaim(
+  teacherId: string,
+  previousNormalizedBeaconId: string | null,
+  newNormalizedBeaconId: string | null,
+  write: () => Promise<unknown>,
+  options: { adoptPlaceholder?: boolean } = {}
+): Promise<boolean> {
+  if (newNormalizedBeaconId === previousNormalizedBeaconId) {
+    await write();
+    return true;
+  }
+
+  let claimedNewBeaconId = false;
+  if (newNormalizedBeaconId) {
+    const claimed = await claimBeaconId(
+      newNormalizedBeaconId,
+      teacherId,
+      options
+    );
+    if (!claimed) {
+      return false;
+    }
+    claimedNewBeaconId = true;
+  }
+
+  try {
+    await write();
+  } catch (writeErr) {
+    if (claimedNewBeaconId && newNormalizedBeaconId) {
+      await releaseBeaconClaim(newNormalizedBeaconId);
+    }
+    throw writeErr;
+  }
+
+  // 旧 beaconId の予約は書き込み成功後に解放する(失敗時に巻き戻せるよう順序を保つ)。
+  if (
+    previousNormalizedBeaconId &&
+    previousNormalizedBeaconId !== newNormalizedBeaconId
+  ) {
+    await releaseBeaconClaim(previousNormalizedBeaconId);
   }
 
   return true;
@@ -1712,57 +1800,33 @@ export const teacherRegisterBeacon = onRequest(async (request, response) => {
     const targetDocId = targetDocRef.id;
     const normalizedBeaconId = normalizeBeaconId(beaconId);
 
-    // この教員が以前登録していた beaconId(あれば)。更新成功後、変更された
-    // 場合だけ古い予約を解放する。
-    const previousNormalizedBeaconId = isNonEmptyString(
-      targetDocData.normalizedBeaconId
-    ) ?
-      String(targetDocData.normalizedBeaconId) :
-      isNonEmptyString(targetDocData.beaconId) ?
-        normalizeBeaconId(String(targetDocData.beaconId)) :
-        null;
+    // この教員が以前登録していた beaconId(あれば)。
+    const previousNormalizedBeaconId =
+      resolvePreviousNormalizedBeaconId(targetDocData);
 
-    let claimedNewBeaconId = false;
-
-    if (normalizedBeaconId !== previousNormalizedBeaconId) {
-      // 他の教員が既に同じ(正規化後の)beaconIdを登録していないかを
-      // beaconClaims の原子的な予約で確認する(自分自身は除外)。
-      // studentBeacon 側は .where("normalizedBeaconId", "==", ...).limit(1)
-      // で「beaconId は教員間で一意」という前提に依存しており、重複登録を
-      // 許すとスキャンがどちらか一方の教員にしかマッチせず出席・授業記録が
-      // 誤帰属する。
-      const claimed = await claimBeaconId(normalizedBeaconId, targetDocId);
-      if (!claimed) {
-        response.status(409).json({
-          error: "このビーコンIDは既に他の教員に登録されています。",
-        });
-        return;
-      }
-
-      claimedNewBeaconId = true;
-    }
-
-    // beaconId (および session) を更新
-    try {
-      await targetDocRef.update({
-        session: session,
-        beaconId: beaconId,
-        normalizedBeaconId,
-        updatedAt: FieldValue.serverTimestamp(),
+    // 他の教員が既に同じ(正規化後の)beaconIdを登録していないかを
+    // beaconClaims の原子的な予約で確認する(自分自身は除外)。
+    // studentBeacon 側は .where("normalizedBeaconId", "==", ...).limit(1)
+    // で「beaconId は教員間で一意」という前提に依存しており、重複登録を
+    // 許すとスキャンがどちらか一方の教員にしかマッチせず出席・授業記録が
+    // 誤帰属する。
+    const reassigned = await reassignBeaconClaim(
+      targetDocId,
+      previousNormalizedBeaconId,
+      normalizedBeaconId,
+      () =>
+        targetDocRef.update({
+          session: session,
+          beaconId: beaconId,
+          normalizedBeaconId,
+          updatedAt: FieldValue.serverTimestamp(),
+        })
+    );
+    if (!reassigned) {
+      response.status(409).json({
+        error: "このビーコンIDは既に他の教員に登録されています。",
       });
-    } catch (updateErr) {
-      if (claimedNewBeaconId) {
-        await releaseBeaconClaim(normalizedBeaconId);
-      }
-      throw updateErr;
-    }
-
-    // 旧 beaconId の予約は更新成功後に解放する(失敗時に巻き戻せるよう順序を保つ)。
-    if (
-      previousNormalizedBeaconId &&
-      previousNormalizedBeaconId !== normalizedBeaconId
-    ) {
-      await releaseBeaconClaim(previousNormalizedBeaconId);
+      return;
     }
 
     logger.info("Teacher beacon registered successfully", {
