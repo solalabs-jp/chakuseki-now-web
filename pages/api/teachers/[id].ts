@@ -49,6 +49,18 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         res.status(result.status).json({ error: result.error });
         return;
       }
+
+      // 削除した教員が beaconId を持っていた場合、beaconClaims の予約を
+      // 解放する。これをしないと、その物理ビーコンの予約が孤児として残り、
+      // 以後別の教員に割り当てようとしても reserveBeaconId が常に
+      // 「他人が所有中」と判定して失敗し続ける。
+      const currentBeaconId = isNonEmptyString(target.data.beaconId)
+        ? formatBeaconId(String(target.data.beaconId))
+        : null;
+      if (currentBeaconId) {
+        await releaseBeaconClaim(currentBeaconId);
+      }
+
       res.status(200).json({ id });
     } catch (error) {
       console.error("teachers DELETE error", error);
