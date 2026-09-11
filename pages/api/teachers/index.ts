@@ -1,5 +1,5 @@
 import type { NextApiRequest, NextApiResponse } from "next";
-import { listCollection } from "../../../lib/firestoreRest";
+import { listCollection, queryCollection } from "../../../lib/firestoreRest";
 import { requireTeacher } from "../../../lib/auth";
 import { DEFAULT_PASSWORD, registerAuthUser } from "../../../lib/registerAuthUser";
 import { formatBeaconId } from "../../../lib/beaconId";
@@ -27,15 +27,17 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   if (req.method === "GET") {
     try {
+      // 生徒も含む users 全件を読んでからメモリ上で role フィルタする代わりに、
+      // role == "teacher" の等価クエリで教員だけを取得する。生徒数が増えても
+      // 読み取り件数が増えないようにするため(studentBeacon 等と同じ手法)。
       const [users, classes] = await Promise.all([
-        listCollection("users"),
+        queryCollection("users", "role", "teacher"),
         listCollection("classes"),
       ]);
 
       const classesById = new Map(classes.map((c) => [c.id, c.data]));
 
       const teachers = users
-        .filter((u) => u.data.role === "teacher")
         .map((u) => ({
           id: u.id,
           name: u.data.name ?? "",
