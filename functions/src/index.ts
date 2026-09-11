@@ -1444,6 +1444,20 @@ export const teacherAttendanceBook = onRequest((request, response) => {
 });
 
 /**
+ * beaconClaims/{normalizedBeaconId} の予約を解放する(pages/api/teachers 側の
+ * lib/beaconClaims.ts と同じ考え方)。既に無くても呼び出し元は失敗させない。
+ * @param {string} normalizedBeaconId 解放する予約の doc ID(正規化済み beaconId)。
+ * @return {Promise<void>} 完了を表す Promise。
+ */
+async function releaseBeaconClaim(normalizedBeaconId: string): Promise<void> {
+  try {
+    await db.collection("beaconClaims").doc(normalizedBeaconId).delete();
+  } catch (error) {
+    logger.error("releaseBeaconClaim failed", {normalizedBeaconId, error});
+  }
+}
+
+/**
  * POST /api/teacher/register-beacon
  * Body: { session: string, beaconId: string }
  * Response: { message: string, userId: string, beaconId: string }
@@ -1552,36 +1566,100 @@ export const teacherRegisterBeacon = onRequest(async (request, response) => {
       return;
     }
 
+    const targetDocId = targetDocRef.id;
     const normalizedBeaconId = normalizeBeaconId(beaconId);
 
-    // 他の教員が既に同じ(正規化後の)beaconIdを登録していないか確認する。
-    // studentBeacon 側は .where("normalizedBeaconId", "==", ...).limit(1) で
-    // 「beaconId は教員間で一意」という前提に依存しているため、重複登録を
-    // 許すとスキャンがどちらか一方の教員にしかマッチせず、出席・授業記録が
-    // 誤帰属する(pages/api/teachers 側と同じ理由)。
-    const duplicateSnapshot = await db
-      .collection("users")
-      .where("role", "==", "teacher")
-      .where("normalizedBeaconId", "==", normalizedBeaconId)
-      .get();
-    const targetDocId = targetDocRef.id;
-    const duplicate = duplicateSnapshot.docs.find(
-      (doc) => doc.id !== targetDocId
-    );
-    if (duplicate) {
-      response.status(409).json({
-        error: "このビーコンIDは既に他の教員に登録されています。",
-      });
-      return;
+    // この教員が以前登録していた beaconId(あれば)。更新成功後、変更された
+    // 場合だけ古い予約を解放する。
+    const previousNormalizedBeaconId = isNonEmptyString(
+      targetDocData.normalizedBeaconId
+    ) ?
+      String(targetDocData.normalizedBeaconId) :
+      isNonEmptyString(targetDocData.beaconId) ?
+        normalizeBeaconId(String(targetDocData.beaconId)) :
+        null;
+
+    let claimedNewBeaconId = false;
+
+    if (normalizedBeaconId !== previousNormalizedBeaconId) {
+      // 他の教員が既に同じ(正規化後の)beaconIdを登録していないかを、
+      // beaconClaims/{normalizedBeaconId} の原子的な作成(.create() は既存
+      // なら失敗する)で確認する(自分自身は除外)。query してから update
+      // する非アトミックな実装だと、ほぼ同時の2リクエストが両方「重複
+      // なし」と判定して両方の update が成功してしまう TOCTOU レースが
+      // 起き得るため、lib/beaconClaims.ts(pages/api/teachers 側)と同じ
+      // 考え方で予約する。studentBeacon 側は
+      // .where("normalizedBeaconId", "==", ...).limit(1) で「beaconId は
+      // 教員間で一意」という前提に依存しており、重複登録を許すとスキャンが
+      // どちらか一方の教員にしかマッチせず出席・授業記録が誤帰属する。
+      const claimRef = db.collection("beaconClaims").doc(normalizedBeaconId);
+      let claimed = false;
+      try {
+        await claimRef.create({
+          teacherId: targetDocId,
+          createdAt: FieldValue.serverTimestamp(),
+        });
+        claimed = true;
+      } catch (createErr) {
+        // 既に予約が存在する。所有者が自分自身なら重複ではない。
+        const existingClaim = await claimRef.get();
+        if (
+          existingClaim.exists &&
+          existingClaim.data()?.teacherId === targetDocId
+        ) {
+          claimed = true;
+        }
+      }
+
+      if (!claimed) {
+        response.status(409).json({
+          error: "このビーコンIDは既に他の教員に登録されています。",
+        });
+        return;
+      }
+
+      // beaconClaims 導入前に登録された beaconId とも衝突していないか確認する。
+      const legacySnapshot = await db
+        .collection("users")
+        .where("role", "==", "teacher")
+        .where("normalizedBeaconId", "==", normalizedBeaconId)
+        .get();
+      const legacyConflict = legacySnapshot.docs.some(
+        (doc) => doc.id !== targetDocId
+      );
+      if (legacyConflict) {
+        await releaseBeaconClaim(normalizedBeaconId);
+        response.status(409).json({
+          error: "このビーコンIDは既に他の教員に登録されています。",
+        });
+        return;
+      }
+
+      claimedNewBeaconId = true;
     }
 
     // beaconId (および session) を更新
-    await targetDocRef.update({
-      session: session,
-      beaconId: beaconId,
-      normalizedBeaconId,
-      updatedAt: FieldValue.serverTimestamp(),
-    });
+    try {
+      await targetDocRef.update({
+        session: session,
+        beaconId: beaconId,
+        normalizedBeaconId,
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+    } catch (updateErr) {
+      if (claimedNewBeaconId) {
+        await releaseBeaconClaim(normalizedBeaconId);
+      }
+      throw updateErr;
+    }
+
+    // 旧 beaconId の予約は更新成功後に解放する(失敗時に巻き戻せるよう順序を保つ)。
+    if (
+      previousNormalizedBeaconId &&
+      previousNormalizedBeaconId !== normalizedBeaconId
+    ) {
+      await releaseBeaconClaim(previousNormalizedBeaconId);
+    }
 
     logger.info("Teacher beacon registered successfully", {
       docId: targetDocRef.id,
