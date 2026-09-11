@@ -11,7 +11,7 @@ import * as http from "http";
 admin.initializeApp();
 const db = admin.firestore();
 
-setGlobalOptions({ maxInstances: 10 });
+setGlobalOptions({maxInstances: 10});
 
 type BeaconRequestBody = {
   beaconId?: unknown;
@@ -207,13 +207,13 @@ export const loginWithEmailPassword = onRequest(async (request, response) => {
   const body = (request.body ?? {}) as LoginRequestBody;
 
   if (!isNonEmptyString(body.email) || !isNonEmptyString(body.password)) {
-    response.status(400).json({ error: "email and password are required." });
+    response.status(400).json({error: "email and password are required."});
     return;
   }
 
   if (!FIREBASE_API_KEY) {
     logger.error("FIREBASE_API_KEY is not set");
-    response.status(500).json({ error: "Server configuration error." });
+    response.status(500).json({error: "Server configuration error."});
     return;
   }
 
@@ -239,9 +239,9 @@ export const loginWithEmailPassword = onRequest(async (request, response) => {
         code === "INVALID_PASSWORD" ||
         code === "INVALID_LOGIN_CREDENTIALS"
       ) {
-        response.status(401).json({ error: "Invalid email or password." });
+        response.status(401).json({error: "Invalid email or password."});
       } else {
-        response.status(400).json({ error: code });
+        response.status(400).json({error: code});
       }
       return;
     }
@@ -263,7 +263,8 @@ export const loginWithEmailPassword = onRequest(async (request, response) => {
     if (directDoc.exists) {
       role = directDoc.data()?.role ?? null;
       userId = uid;
-      displayName = directDoc.data()?.name ?? directDoc.data()?.displayName ?? null;
+      displayName =
+        directDoc.data()?.name ?? directDoc.data()?.displayName ?? null;
       grade = directDoc.data()?.grade ?? null;
       className = directDoc.data()?.className ?? null;
       email = directDoc.data()?.email ?? null;
@@ -278,7 +279,8 @@ export const loginWithEmailPassword = onRequest(async (request, response) => {
         const matchedDoc = byEmailSnapshot.docs[0];
         role = matchedDoc.data()?.role ?? null;
         userId = matchedDoc.id;
-        displayName = matchedDoc.data()?.name ?? matchedDoc.data()?.displayName ?? null;
+        displayName =
+          matchedDoc.data()?.name ?? matchedDoc.data()?.displayName ?? null;
         grade = matchedDoc.data()?.grade ?? null;
         className = matchedDoc.data()?.className ?? null;
         email = matchedDoc.data()?.email ?? null;
@@ -291,7 +293,7 @@ export const loginWithEmailPassword = onRequest(async (request, response) => {
       return;
     }
 
-    logger.info("Login successful", { uid, role, structuredData: true });
+    logger.info("Login successful", {uid, role, structuredData: true});
 
     response.status(200).json({
       idToken,
@@ -306,8 +308,8 @@ export const loginWithEmailPassword = onRequest(async (request, response) => {
     });
   } catch (err: unknown) {
     const errObj = err as Record<string, unknown>;
-    logger.error("authLogin error", { error: errObj });
-    response.status(500).json({ error: "Internal server error." });
+    logger.error("authLogin error", {error: errObj});
+    response.status(500).json({error: "Internal server error."});
   }
 });
 
@@ -490,11 +492,11 @@ export const registerUser = onRequest(async (request, response) => {
     });
   } catch (err: unknown) {
     const errObj = err as Record<string, unknown>;
-    logger.error("Error registering user", { error: errObj });
+    logger.error("Error registering user", {error: errObj});
     if (String(errObj?.code) === "auth/email-already-exists") {
-      response.status(409).json({ error: "Email already exists." });
+      response.status(409).json({error: "Email already exists."});
     } else {
-      response.status(500).json({ error: "Internal server error." });
+      response.status(500).json({error: "Internal server error."});
     }
   }
 });
@@ -520,7 +522,7 @@ export const deleteUser = onRequest(async (request, response) => {
       message: "POST uid to delete the user.",
       method: "POST",
       path: "/api/auth/delete-user",
-      body: { uid: "abc123" },
+      body: {uid: "abc123"},
     });
     return;
   }
@@ -537,14 +539,14 @@ export const deleteUser = onRequest(async (request, response) => {
   const body = (request.body ?? {}) as DeleteUserRequestBody;
 
   if (!isNonEmptyString(body.uid)) {
-    response.status(400).json({ error: "uid is required." });
+    response.status(400).json({error: "uid is required."});
     return;
   }
 
   try {
     const userSnap = await requireTeacherTarget(body.uid);
     if (!userSnap) {
-      response.status(404).json({ error: "Teacher not found." });
+      response.status(404).json({error: "Teacher not found."});
       return;
     }
 
@@ -593,16 +595,17 @@ export const deleteUser = onRequest(async (request, response) => {
       structuredData: true,
     });
 
-    response.status(200).json({ message: "User deleted successfully." });
+    response.status(200).json({message: "User deleted successfully."});
   } catch (err: unknown) {
-    logger.error("Error deleting user", { error: err });
-    response.status(500).json({ error: "Internal server error." });
+    logger.error("Error deleting user", {error: err});
+    response.status(500).json({error: "Internal server error."});
   }
 });
 
 /**
  * POST /api/auth/update-user
- * Body: { uid: string, email?: string, name?: string, classId?: string, beaconId?: string }
+ * Body: { uid: string, email?: string, name?: string, classId?: string,
+ *         beaconId?: string }
  * Response: { message: string }
  *
  * emailが渡された場合はFirebase Authのメールも更新し、Firestoreの
@@ -621,7 +624,7 @@ export const updateUser = onRequest(async (request, response) => {
       message: "POST uid and the fields to update.",
       method: "POST",
       path: "/api/auth/update-user",
-      body: { uid: "abc123", email: "new@example.com", name: "山田 太郎" },
+      body: {uid: "abc123", email: "new@example.com", name: "山田 太郎"},
     });
     return;
   }
@@ -638,12 +641,12 @@ export const updateUser = onRequest(async (request, response) => {
   const body = (request.body ?? {}) as UpdateUserRequestBody;
 
   if (!isNonEmptyString(body.uid)) {
-    response.status(400).json({ error: "uid is required." });
+    response.status(400).json({error: "uid is required."});
     return;
   }
 
   if (body.email !== undefined && !isNonEmptyString(body.email)) {
-    response.status(400).json({ error: "email cannot be empty." });
+    response.status(400).json({error: "email cannot be empty."});
     return;
   }
 
@@ -651,13 +654,13 @@ export const updateUser = onRequest(async (request, response) => {
     // 操作対象が teacher であることを確認する(deleteUser と同様の理由)。
     const targetSnap = await requireTeacherTarget(body.uid);
     if (!targetSnap) {
-      response.status(404).json({ error: "Teacher not found." });
+      response.status(404).json({error: "Teacher not found."});
       return;
     }
 
     if (isNonEmptyString(body.email)) {
       try {
-        await admin.auth().updateUser(body.uid, { email: body.email });
+        await admin.auth().updateUser(body.uid, {email: body.email});
       } catch (authErr: unknown) {
         if (
           String((authErr as Record<string, unknown>)?.code) !==
@@ -674,7 +677,7 @@ export const updateUser = onRequest(async (request, response) => {
           throw authErr;
         }
         const authUser = await admin.auth().getUserByEmail(currentEmail);
-        await admin.auth().updateUser(authUser.uid, { email: body.email });
+        await admin.auth().updateUser(authUser.uid, {email: body.email});
         logger.warn("updateUser: resolved Auth UID via email for legacy doc", {
           docId: body.uid,
           authUid: authUser.uid,
@@ -688,13 +691,13 @@ export const updateUser = onRequest(async (request, response) => {
     if (body.classId !== undefined) update.classId = body.classId;
     if (body.beaconId !== undefined) {
       update.beaconId = body.beaconId;
-      update.normalizedBeaconId = isNonEmptyString(body.beaconId)
-        ? normalizeBeaconId(String(body.beaconId))
-        : FieldValue.delete();
+      update.normalizedBeaconId = isNonEmptyString(body.beaconId) ?
+        normalizeBeaconId(String(body.beaconId)) :
+        FieldValue.delete();
     }
 
     if (Object.keys(update).length > 0) {
-      await db.collection("users").doc(body.uid).set(update, { merge: true });
+      await db.collection("users").doc(body.uid).set(update, {merge: true});
     }
 
     logger.info("User updated successfully", {
@@ -702,16 +705,16 @@ export const updateUser = onRequest(async (request, response) => {
       structuredData: true,
     });
 
-    response.status(200).json({ message: "User updated successfully." });
+    response.status(200).json({message: "User updated successfully."});
   } catch (err: unknown) {
     const errObj = err as Record<string, unknown>;
-    logger.error("Error updating user", { error: errObj });
+    logger.error("Error updating user", {error: errObj});
     if (String(errObj?.code) === "auth/email-already-exists") {
-      response.status(409).json({ error: "Email already exists." });
+      response.status(409).json({error: "Email already exists."});
     } else if (String(errObj?.code) === "auth/user-not-found") {
-      response.status(404).json({ error: "User not found." });
+      response.status(404).json({error: "User not found."});
     } else {
-      response.status(500).json({ error: "Internal server error." });
+      response.status(500).json({error: "Internal server error."});
     }
   }
 });
@@ -813,6 +816,8 @@ export const createCheckinQuestion = onRequest(async (request, response) => {
  * they can't share code directly since functions/ and the web app are
  * separate packages, but both must agree on what counts as an equivalent
  * beacon ID or matching breaks again.
+ * @param {string} value Raw beacon ID (any case, with or without dashes).
+ * @return {string} The normalized 8-4-4-4-12 hex UUID.
  */
 function normalizeBeaconId(value: string): string {
   const hex = value.replace(/[^0-9a-fA-F]/g, "").slice(0, 32).toUpperCase();
@@ -916,7 +921,8 @@ export const studentBeacon = onRequest(async (request, response) => {
       return;
     }
 
-    const teacherName = matchedTeacher.data().name ?? matchedTeacher.data().displayName ?? "";
+    const teacherName =
+      matchedTeacher.data().name ?? matchedTeacher.data().displayName ?? "";
 
     await db.collection("beaconScans").add({
       beaconId: scannedBeaconId,
@@ -1107,7 +1113,7 @@ export const studentTimetable = onRequest(async (request, response) => {
   try {
     const userDoc = await db.collection("users").doc(uid).get();
     if (!userDoc.exists) {
-      response.status(404).json({ error: "User not found." });
+      response.status(404).json({error: "User not found."});
       return;
     }
 
@@ -1115,7 +1121,7 @@ export const studentTimetable = onRequest(async (request, response) => {
     const classId = userData?.classId;
 
     if (!classId) {
-      response.status(404).json({ error: "User does not belong to any class." });
+      response.status(404).json({error: "User does not belong to any class."});
       return;
     }
 
@@ -1141,8 +1147,8 @@ export const studentTimetable = onRequest(async (request, response) => {
     response.status(200).json(timetables);
   } catch (err) {
     const errObj = err as Record<string, unknown>;
-    logger.error("Error fetching timetable", { error: errObj });
-    response.status(500).json({ error: "Internal server error." });
+    logger.error("Error fetching timetable", {error: errObj});
+    response.status(500).json({error: "Internal server error."});
   }
 });
 
@@ -1677,7 +1683,8 @@ export const generateDailySessions = onSchedule(
         const sessionData = {
           scheduleId,
           classId: scheduleData.classId,
-          teacherId: scheduleData.defaultTeacherId ?? scheduleData.teacherId, // デフォルトの教師をコピー(旧フィールドへのフォールバック)
+          // デフォルトの教師をコピー(旧フィールドへのフォールバック)
+          teacherId: scheduleData.defaultTeacherId ?? scheduleData.teacherId,
           date: todayTimestamp,
           createdAt: FieldValue.serverTimestamp(),
         };
@@ -1897,13 +1904,13 @@ const verifyToken = async (
     const errObj = err as Record<string, unknown>;
     logger.warn(
       "Token verification failed",
-      { error: errObj }
+      {error: errObj}
     );
     return null;
   }
 };
 
-/**
+/*
  * registerUser/updateUser/deleteUserの保護用。これらはCloud FunctionsのURLに
  * 直接POSTすれば誰でも呼べてしまうため、ラッパーのNext.js API(requireTeacher)
  * とは別に、この関数自体でも呼び出し元がteacherロールでログイン済みかを検証する。
@@ -1914,7 +1921,7 @@ const requireTeacherCaller = async (
 ): Promise<string | null> => {
   const callerUid = await verifyToken(request);
   if (!callerUid) {
-    response.status(401).json({ error: "Authentication required." });
+    response.status(401).json({error: "Authentication required."});
     return null;
   }
 
@@ -1935,19 +1942,19 @@ const requireTeacherCaller = async (
         }
       }
     } catch (err) {
-      logger.warn("requireTeacherCaller: email fallback failed", { error: err });
+      logger.warn("requireTeacherCaller: email fallback failed", {error: err});
     }
   }
 
   if (!callerDoc.exists || callerDoc.data()?.role !== "teacher") {
-    response.status(403).json({ error: "Teacher role required." });
+    response.status(403).json({error: "Teacher role required."});
     return null;
   }
 
   return callerUid;
 };
 
-/**
+/*
  * deleteUser/updateUser の保護用。呼び出し元が teacher であることに加え、
  * 「操作対象」も teacher であることを確認する。これが無いと、teacher
  * トークンを持つ誰でも任意ユーザー(生徒・他教員・管理者)を削除・改変
