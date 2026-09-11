@@ -30,6 +30,13 @@ const COLLECTION = "beaconClaims";
  * teacherId が未採番(POST で uid 採番前)の場合は空文字を渡し、採番後に
  * assignBeaconClaim で確定させる。
  */
+// POST は uid 採番前に teacherId="" のプレースホルダで予約し、採番後に
+// assignBeaconClaim で確定させる。この間にプロセスが落ちる/タイムアウト
+// すると teacherId="" のまま孤児になり得るため、これより古い空予約は
+// 孤児とみなして上書きを許可する(そうしないと以後そのビーコンIDへの
+// 予約が自己修復パスも無いまま永久にブロックされる)。
+const STALE_PENDING_MS = 60_000;
+
 export async function reserveBeaconId(
   normalizedBeaconId: string,
   teacherId: string
@@ -44,7 +51,30 @@ export async function reserveBeaconId(
     // (同じ beaconId を保持したまま別フィールドだけ更新するケース)。
     const existing = await getDocument(COLLECTION, normalizedBeaconId);
     const owner = existing?.data.teacherId;
-    return { ok: Boolean(owner) && owner === teacherId };
+    if (owner && owner === teacherId) {
+      return { ok: true };
+    }
+
+    if (!owner) {
+      const createdAtValue = existing?.data.createdAt;
+      const createdAtMs =
+        typeof createdAtValue === "string" ? Date.parse(createdAtValue) : NaN;
+      const isStale =
+        !Number.isFinite(createdAtMs) || Date.now() - createdAtMs > STALE_PENDING_MS;
+
+      if (!isStale) {
+        // 採番中(登録処理が進行中)とみなし、重複扱いにする。
+        return { ok: false };
+      }
+
+      // 孤児化した空予約を上書きして自分のものにする。
+      await upsertDocument(COLLECTION, normalizedBeaconId, {
+        teacherId,
+        createdAt: new Date(),
+      });
+    } else {
+      return { ok: false };
+    }
   }
 
   // この予約レコードの仕組みを導入する前に登録された beaconId と衝突して
