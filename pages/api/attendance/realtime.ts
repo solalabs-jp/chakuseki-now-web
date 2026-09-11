@@ -1,6 +1,7 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { listCollection, queryCollectionWhere } from "../../../lib/firestoreRest";
 import { requireTeacher } from "../../../lib/auth";
+import { formatJstTime, jstDayBoundsUtc } from "../../../lib/jstDate";
 
 const STATUS_LABELS: Record<string, string> = {
   present: "出席",
@@ -10,26 +11,6 @@ const STATUS_LABELS: Record<string, string> = {
   early_leave: "早退",
   mid_absence: "中抜け",
 };
-
-function formatTime(iso: unknown): string {
-  if (typeof iso !== "string") return "--:--:--";
-  const match = iso.match(/T(\d{2}):(\d{2}):(\d{2})/);
-  return match ? `${match[1]}:${match[2]}:${match[3]}` : "--:--:--";
-}
-
-/**
- * JST での「今日」の 00:00:00〜翌日00:00:00 を表す境界を返す(内部表現は UTC の
- * Date で問題ない。timestampValue として送る際に UTC ISO 文字列化されるため)。
- * confirmedAt は Firestore の Timestamp 型で保存されているので、この範囲で
- * Firestore 側に絞り込ませれば、全期間を読んでメモリ上でフィルタする必要がない。
- * JST は DST が無いため常に +09:00 固定で計算してよい。
- */
-function jstDayBoundsUtc(now: Date): { start: Date; end: Date } {
-  const jstDateString = now.toLocaleDateString("sv-SE", { timeZone: "Asia/Tokyo" });
-  const start = new Date(`${jstDateString}T00:00:00+09:00`);
-  const end = new Date(start.getTime() + 24 * 60 * 60 * 1000);
-  return { start, end };
-}
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   const uid = await requireTeacher(req, res);
@@ -86,7 +67,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           id: String(record.data.userId ?? ""),
           name: student?.name ?? record.data.userId,
           status: STATUS_LABELS[String(record.data.status)] ?? String(record.data.status),
-          time: formatTime(record.data.confirmedAt),
+          time: formatJstTime(record.data.confirmedAt),
           comment,
         };
       });
