@@ -47,6 +47,21 @@ const MonitorPage: NextPage & { getLayout: (page: ReactElement) => ReactElement 
   const [mounted, setMounted] = useState(false);
   const [now, setNow] = useState<Date | null>(null);
   const [questionText, setQuestionText] = useState(DEFAULT_QUESTION);
+  const [imageUrl, setImageUrl] = useState<string | null>(null);
+  const [isPortrait, setIsPortrait] = useState<boolean>(false);
+
+  const handleImageLoad = (url: string | null) => {
+    setImageUrl(url);
+    if (!url) {
+      setIsPortrait(false);
+      return;
+    }
+    const img = new Image();
+    img.onload = () => {
+      setIsPortrait(img.naturalHeight > img.naturalWidth);
+    };
+    img.src = url;
+  };
 
   useEffect(() => {
     setMounted(true);
@@ -60,10 +75,15 @@ const MonitorPage: NextPage & { getLayout: (page: ReactElement) => ReactElement 
     if (saved) {
       setQuestionText(saved);
     }
+    const savedImg = localStorage.getItem('monitorImage');
+    handleImageLoad(savedImg);
 
     const handleStorage = (e: StorageEvent) => {
-      if (e.key === 'monitorQuestion' && e.newValue) {
+      if (e.key === 'monitorQuestion' && e.newValue !== null) {
         setQuestionText(e.newValue);
+      }
+      if (e.key === 'monitorImage') {
+        handleImageLoad(e.newValue);
       }
     };
     window.addEventListener('storage', handleStorage);
@@ -72,8 +92,13 @@ const MonitorPage: NextPage & { getLayout: (page: ReactElement) => ReactElement 
     try {
       bc = new BroadcastChannel('monitor_channel');
       bc.onmessage = (event) => {
-        if (event.data?.type === 'UPDATE_QUESTION' && event.data.question) {
-          setQuestionText(event.data.question);
+        if (event.data?.type === 'UPDATE_QUESTION') {
+          if (event.data.question !== undefined) {
+            setQuestionText(event.data.question);
+          }
+          if (event.data.image !== undefined) {
+            handleImageLoad(event.data.image);
+          }
         }
       };
     } catch { }
@@ -99,18 +124,25 @@ const MonitorPage: NextPage & { getLayout: (page: ReactElement) => ReactElement 
       </div>
 
       {/* Center content */}
-      <div className={styles.center}>
-        <div className={styles.questionBadge}>
-          <svg width="13" height="13" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24" strokeLinecap="round"><rect x="2" y="3" width="20" height="14" rx="2" /><path d="M8 21h8M12 17v4" /></svg>
-          本日のお題 (Question of the Day)
+      <div className={`${styles.center} ${imageUrl ? (isPortrait ? styles.layoutRow : styles.layoutCol) : ''}`}>
+        {imageUrl && (
+          <div className={styles.imageContainer}>
+            <img src={imageUrl} alt="Monitor display" className={styles.monitorImage} />
+          </div>
+        )}
+        <div className={styles.textContainer}>
+          <div className={styles.questionBadge}>
+            <svg width="13" height="13" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24" strokeLinecap="round"><rect x="2" y="3" width="20" height="14" rx="2" /><path d="M8 21h8M12 17v4" /></svg>
+            本日のお題 (Question of the Day)
+          </div>
+          <h1 className={styles.questionText}>
+            {questionText}
+          </h1>
+          <p className={styles.instruction}>
+            着席登録時に、この質問に対する回答を入力してください。<br />
+            (Please answer this question when you check in.)
+          </p>
         </div>
-        <h1 className={styles.questionText}>
-          {questionText}
-        </h1>
-        <p className={styles.instruction}>
-          着席登録時に、この質問に対する回答を入力してください。<br />
-          (Please answer this question when you check in.)
-        </p>
       </div>
 
       {/* Bottom */}

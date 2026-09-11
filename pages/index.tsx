@@ -179,7 +179,7 @@ const Home: NextPage = () => {
             ref={item.scheduleId === highlightedScheduleId ? currentRowRef : undefined}
             className={`${styles.scheduleRow} ${styles[`row_${item.status}`]}`}
             onClick={() => {
-              if (item.status === 'current') {
+              if (item.status === 'current' || item.status === 'past') {
                 router.push('/attendance');
               }
             }}

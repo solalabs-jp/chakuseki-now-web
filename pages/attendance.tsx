@@ -1,7 +1,7 @@
 
 import type { NextPage } from 'next';
 import { useRouter } from 'next/router';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import UserProfileButton from '../components/UserProfileButton';
 import { authHeaders } from '../lib/clientAuth';
 import styles from '../styles/Attendance.module.css';
@@ -96,14 +96,25 @@ type RealtimeStudent = {
 const AttendancePage: NextPage = () => {
   const router = useRouter();
   const [question, setQuestion] = useState('');
+  const [attachedImage, setAttachedImage] = useState<string | null>(null);
+  const [attachedImageName, setAttachedImageName] = useState<string | null>(null);
   const [isSent, setIsSent] = useState(false);
   const [stats, setStats] = useState<AttendanceStats | null>(null);
   const [students, setStudents] = useState<RealtimeStudent[]>([]);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     const saved = localStorage.getItem('monitorQuestion');
     if (saved) {
       setQuestion(saved);
+    }
+    const savedImg = localStorage.getItem('monitorImage');
+    if (savedImg) {
+      setAttachedImage(savedImg);
+    }
+    const savedImgName = localStorage.getItem('monitorImageName');
+    if (savedImgName) {
+      setAttachedImageName(savedImgName);
     }
 
     fetch('/api/attendance/stats?classId=class-2A', { headers: authHeaders() })
@@ -123,15 +134,36 @@ const AttendancePage: NextPage = () => {
       .catch(() => {});
   }, []);
 
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setAttachedImageName(file.name);
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        setAttachedImage(ev.target?.result as string);
+      };
+      reader.readAsDataURL(file);
+    }
+    e.target.value = '';
+  };
+
   const handleSendToMonitor = () => {
-    if (!question.trim()) {
-      alert('お題・アンケート内容を入力してください。');
+    if (!question.trim() && !attachedImage) {
+      alert('お題・アンケート内容を入力するか、画像を添付してください。');
       return;
     }
     localStorage.setItem('monitorQuestion', question.trim());
+    if (attachedImage) {
+      localStorage.setItem('monitorImage', attachedImage);
+      if (attachedImageName) localStorage.setItem('monitorImageName', attachedImageName);
+    } else {
+      localStorage.removeItem('monitorImage');
+      localStorage.removeItem('monitorImageName');
+    }
+    
     try {
       const bc = new BroadcastChannel('monitor_channel');
-      bc.postMessage({ type: 'UPDATE_QUESTION', question: question.trim() });
+      bc.postMessage({ type: 'UPDATE_QUESTION', question: question.trim(), image: attachedImage });
       bc.close();
     } catch {}
 
@@ -205,7 +237,14 @@ const AttendancePage: NextPage = () => {
             onChange={(e) => setQuestion(e.target.value)}
           />
           <div className={styles.questionActions}>
-            <button className={styles.attachBtn}>
+            <input
+              type="file"
+              accept="image/*"
+              style={{ display: 'none' }}
+              ref={fileInputRef}
+              onChange={handleFileChange}
+            />
+            <button className={styles.attachBtn} onClick={() => fileInputRef.current?.click()}>
               <PaperclipIcon />
               添付
             </button>
@@ -214,6 +253,18 @@ const AttendancePage: NextPage = () => {
               {isSent ? 'モニターに反映完了！' : 'モニターに表示'}
             </button>
           </div>
+          {attachedImage && (
+            <div className={styles.fileNameWrapper}>
+              <PaperclipIcon />
+              <span className={styles.fileNameText}>{attachedImageName || '添付画像'}</span>
+              <button className={styles.removeFileBtn} onClick={() => {
+                setAttachedImage(null);
+                setAttachedImageName(null);
+              }}>
+                <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12"/></svg>
+              </button>
+            </div>
+          )}
         </div>
       </div>
 

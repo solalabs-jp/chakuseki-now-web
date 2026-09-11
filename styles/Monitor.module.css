@@ -54,6 +54,55 @@
   padding: 40px 0;
 }
 
+/* ── Layout Modifiers ── */
+.layoutRow {
+  flex-direction: row !important;
+  text-align: left;
+  justify-content: center;
+  align-items: center;
+  gap: 40px;
+}
+
+.layoutCol {
+  flex-direction: column !important;
+  text-align: center;
+  justify-content: center;
+  align-items: center;
+  gap: 24px;
+}
+
+.imageContainer {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  max-width: 50%;
+  max-height: 50vh;
+}
+
+.monitorImage {
+  max-width: 100%;
+  max-height: 100%;
+  border-radius: 12px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+  object-fit: contain;
+}
+
+.textContainer {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.layoutRow .textContainer {
+  align-items: flex-start;
+  text-align: left;
+}
+
+.layoutCol .textContainer {
+  align-items: center;
+  text-align: center;
+}
+
 .questionBadge {
   display: inline-flex;
   align-items: center;
