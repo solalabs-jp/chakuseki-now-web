@@ -1,5 +1,5 @@
 import type { NextApiRequest, NextApiResponse } from "next";
-import { listCollection } from "../../../lib/firestoreRest";
+import { listCollection, queryCollectionWhere } from "../../../lib/firestoreRest";
 import { requireTeacher } from "../../../lib/auth";
 
 const STATUS_LABELS: Record<string, string> = {
@@ -17,11 +17,18 @@ function formatTime(iso: unknown): string {
   return match ? `${match[1]}:${match[2]}:${match[3]}` : "--:--:--";
 }
 
-function toJstDateString(value: unknown): string | null {
-  if (typeof value !== "string") return null;
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return null;
-  return date.toLocaleDateString("sv-SE", { timeZone: "Asia/Tokyo" });
+/**
+ * JST での「今日」の 00:00:00〜翌日00:00:00 を表す境界を返す(内部表現は UTC の
+ * Date で問題ない。timestampValue として送る際に UTC ISO 文字列化されるため)。
+ * confirmedAt は Firestore の Timestamp 型で保存されているので、この範囲で
+ * Firestore 側に絞り込ませれば、全期間を読んでメモリ上でフィルタする必要がない。
+ * JST は DST が無いため常に +09:00 固定で計算してよい。
+ */
+function jstDayBoundsUtc(now: Date): { start: Date; end: Date } {
+  const jstDateString = now.toLocaleDateString("sv-SE", { timeZone: "Asia/Tokyo" });
+  const start = new Date(`${jstDateString}T00:00:00+09:00`);
+  const end = new Date(start.getTime() + 24 * 60 * 60 * 1000);
+  return { start, end };
 }
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
@@ -31,9 +38,18 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   const classId = String(req.query.classId ?? "class-2A");
 
   try {
+    const { start, end } = jstDayBoundsUtc(new Date());
+
     const [users, attendanceRecords, checkinAnswers] = await Promise.all([
       listCollection("users"),
-      listCollection("attendanceRecords"),
+      // 全期間を読んでメモリ上で当日分に絞り込む代わりに、Firestore 側の
+      // 範囲クエリ(confirmedAt >= 今日0時 かつ < 翌日0時)で当日分だけを
+      // 取得する。過去分が積み上がるほど listCollection の全件読み取りは
+      // 重くなるため、ポーリング頻度を上げてもコストが増えないようにする。
+      queryCollectionWhere("attendanceRecords", [
+        { field: "confirmedAt", op: "GREATER_THAN_OR_EQUAL", value: start },
+        { field: "confirmedAt", op: "LESS_THAN", value: end },
+      ]),
       listCollection("checkinAnswers"),
     ]);
 
@@ -47,11 +63,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       checkinAnswers.map((a) => [String(a.data.attendance_reId ?? ""), a.data])
     );
 
-    const today = new Date().toLocaleDateString("sv-SE", { timeZone: "Asia/Tokyo" });
-
     const list = attendanceRecords
       .filter((r) => rosterById.has(String(r.data.userId ?? "")))
-      .filter((r) => toJstDateString(r.data.confirmedAt) === today)
       .sort((a, b) =>
         String(a.data.confirmedAt ?? "").localeCompare(String(b.data.confirmedAt ?? ""))
       )
