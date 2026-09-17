@@ -1,3 +1,4 @@
+import { useRef } from 'react';
 import styles from '../../styles/Attendance.module.css';
 import { PaperclipIcon } from './icons';
 
@@ -6,9 +7,46 @@ type QuestionPanelProps = {
   onQuestionChange: (value: string) => void;
   isSent: boolean;
   onSend: () => void;
+  attachedImage: string | null;
+  attachedImageName: string | null;
+  onAttachImage: (dataUrl: string, name: string) => void;
+  onRemoveImage: () => void;
 };
 
-export default function QuestionPanel({ question, onQuestionChange, isSent, onSend }: QuestionPanelProps) {
+export default function QuestionPanel({
+  question,
+  onQuestionChange,
+  isSent,
+  onSend,
+  attachedImage,
+  attachedImageName,
+  onAttachImage,
+  onRemoveImage,
+}: QuestionPanelProps) {
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      if (!file.type.startsWith('image/')) {
+        alert('画像ファイルを選択してください。');
+        e.target.value = '';
+        return;
+      }
+      if (file.size > 2 * 1024 * 1024) {
+        alert('ファイルサイズが大きすぎます。2MB以下の画像を選択してください。');
+        e.target.value = '';
+        return;
+      }
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        onAttachImage(ev.target?.result as string, file.name);
+      };
+      reader.readAsDataURL(file);
+    }
+    e.target.value = '';
+  };
+
   return (
     <div className={styles.questionPanel}>
       <div className={styles.questionPanelTitle}>
@@ -23,7 +61,14 @@ export default function QuestionPanel({ question, onQuestionChange, isSent, onSe
         onChange={(e) => onQuestionChange(e.target.value)}
       />
       <div className={styles.questionActions}>
-        <button className={styles.attachBtn}>
+        <input
+          type="file"
+          accept="image/*"
+          style={{ display: 'none' }}
+          ref={fileInputRef}
+          onChange={handleFileChange}
+        />
+        <button className={styles.attachBtn} onClick={() => fileInputRef.current?.click()}>
           <PaperclipIcon />
           添付
         </button>
@@ -32,6 +77,15 @@ export default function QuestionPanel({ question, onQuestionChange, isSent, onSe
           {isSent ? 'モニターに反映完了！' : 'モニターに表示'}
         </button>
       </div>
+      {attachedImage && (
+        <div className={styles.fileNameWrapper}>
+          <PaperclipIcon />
+          <span className={styles.fileNameText}>{attachedImageName || '添付画像'}</span>
+          <button className={styles.removeFileBtn} onClick={onRemoveImage}>
+            <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12" /></svg>
+          </button>
+        </div>
+      )}
     </div>
   );
 }

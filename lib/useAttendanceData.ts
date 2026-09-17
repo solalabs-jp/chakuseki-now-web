@@ -9,7 +9,7 @@ import type { AttendanceStats, RealtimeStudent } from '../components/attendance/
  * 分ける。タブが非表示の間は Firestore 読み取りを止め、復帰時に即座に
  * 取り直す。
  */
-export function useAttendanceData(classId: string) {
+export function useAttendanceData(classId: string, scheduleId?: string | null) {
   const [stats, setStats] = useState<AttendanceStats | null>(null);
   const [students, setStudents] = useState<RealtimeStudent[]>([]);
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -20,8 +20,11 @@ export function useAttendanceData(classId: string) {
     const STATS_REFRESH_MS = 30000;
     cancelledRef.current = false;
 
+    const queryParams = new URLSearchParams({ classId });
+    if (scheduleId) queryParams.append('scheduleId', scheduleId);
+
     const loadStudents = () => {
-      fetch(`/api/attendance/realtime?classId=${encodeURIComponent(classId)}`, { headers: authHeaders() })
+      fetch(`/api/attendance/realtime?${queryParams.toString()}`, { headers: authHeaders() })
         .then((res) => res.json())
         .then((data) => {
           if (cancelledRef.current || data.error) return;
@@ -31,7 +34,7 @@ export function useAttendanceData(classId: string) {
     };
 
     const loadStats = () => {
-      fetch(`/api/attendance/stats?classId=${encodeURIComponent(classId)}`, { headers: authHeaders() })
+      fetch(`/api/attendance/stats?${queryParams.toString()}`, { headers: authHeaders() })
         .then((res) => res.json())
         .then((data) => {
           if (cancelledRef.current || data.error) return;
@@ -64,7 +67,7 @@ export function useAttendanceData(classId: string) {
       clearInterval(statsTimer);
       document.removeEventListener('visibilitychange', onVisible);
     };
-  }, [classId]);
+  }, [classId, scheduleId]);
 
   // 開発用: 出席履歴を1件削除する。
   const deleteRecord = (recordId: string) => {

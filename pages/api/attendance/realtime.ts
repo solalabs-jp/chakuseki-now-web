@@ -1,7 +1,7 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { listCollection } from "../../../lib/firestoreRest";
 import { requireTeacher } from "../../../lib/auth";
-import { formatJstTime, jstDayBoundsUtc } from "../../../lib/jstDate";
+import { formatJstTime, jstDayBoundsUtc, toJstDateString } from "../../../lib/jstDate";
 import { queryAttendanceRecordsForDay } from "../../../lib/attendanceRecords";
 
 import { STATUS_LABELS } from "../../../lib/statusUtils";
@@ -11,11 +11,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   if (!uid) return;
 
   const classId = String(req.query.classId ?? "class-2A");
+  const scheduleId = req.query.scheduleId ? String(req.query.scheduleId) : null;
 
   try {
     const { start, end } = jstDayBoundsUtc(new Date());
 
-    const [users, attendanceRecords, checkinAnswers] = await Promise.all([
+    const [users, attendanceRecords, checkinAnswers, dailySessions, sessions] = await Promise.all([
       listCollection("users"),
       // 全期間を読んでメモリ上で当日分に絞り込む代わりに、Firestore 側の
       // 範囲クエリ(confirmedAt >= 今日0時 かつ < 翌日0時)で当日分だけを
@@ -23,6 +24,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       // 重くなるため、ポーリング頻度を上げてもコストが増えないようにする。
       queryAttendanceRecordsForDay(start, end),
       listCollection("checkinAnswers"),
+      scheduleId ? listCollection("dailySessions") : Promise.resolve([]),
+      scheduleId ? listCollection("sessions") : Promise.resolve([]),
     ]);
 
     const rosterById = new Map(
@@ -35,8 +38,32 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       checkinAnswers.map((a) => [String(a.data.attendance_reId ?? ""), a.data])
     );
 
-    const list = attendanceRecords
-      .filter((r) => rosterById.has(String(r.data.userId ?? "")))
+    const today = new Date().toLocaleDateString("sv-SE", { timeZone: "Asia/Tokyo" });
+
+    // attendanceRecords は queryAttendanceRecordsForDay で既に当日分のみに
+    // 絞り込まれているため、あとはクラス名簿とスケジュール指定分の絞り込みだけ行う。
+    let filteredRecords = attendanceRecords.filter((r) => rosterById.has(String(r.data.userId ?? "")));
+
+    if (scheduleId) {
+      const dailySession = dailySessions.find(
+        (ds) =>
+          ds.data.scheduleId === scheduleId &&
+          toJstDateString(ds.data.date ?? ds.data.timestamp) === today
+      );
+
+      if (dailySession) {
+        const sessionIds = new Set(
+          sessions
+            .filter((s) => s.data.dailySessionsId === dailySession.id || s.data.daily_sessionsId === dailySession.id)
+            .map((s) => s.id)
+        );
+        filteredRecords = filteredRecords.filter((r) => sessionIds.has(String(r.data.sessionId ?? "")));
+      } else {
+        filteredRecords = [];
+      }
+    }
+
+    const list = filteredRecords
       .sort((a, b) =>
         String(a.data.confirmedAt ?? "").localeCompare(String(b.data.confirmedAt ?? ""))
       )

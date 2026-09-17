@@ -1,7 +1,7 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { listCollection } from "../../../lib/firestoreRest";
 import { requireTeacher } from "../../../lib/auth";
-import { jstDayBoundsUtc } from "../../../lib/jstDate";
+import { jstDayBoundsUtc, toJstDateString } from "../../../lib/jstDate";
 import { queryAttendanceRecordsForDay } from "../../../lib/attendanceRecords";
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
@@ -9,16 +9,19 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   if (!uid) return;
 
   const classId = String(req.query.classId ?? "class-2A");
+  const scheduleId = req.query.scheduleId ? String(req.query.scheduleId) : null;
 
   try {
     const { start, end } = jstDayBoundsUtc(new Date());
 
-    const [users, attendanceRecords] = await Promise.all([
+    const [users, attendanceRecords, dailySessions, sessions] = await Promise.all([
       listCollection("users"),
       // pages/api/attendance/realtime.ts と同じ理由で、全期間を読んでメモリ上
       // で当日分に絞り込む代わりに confirmedAt の範囲クエリで当日分だけを
       // 取得する。
       queryAttendanceRecordsForDay(start, end),
+      scheduleId ? listCollection("dailySessions") : Promise.resolve([]),
+      scheduleId ? listCollection("sessions") : Promise.resolve([]),
     ]);
 
     const rosterIds = new Set(
@@ -27,7 +30,30 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         .map((u) => u.id)
     );
 
-    const records = attendanceRecords.filter((r) => rosterIds.has(String(r.data.userId ?? "")));
+    const today = new Date().toLocaleDateString("sv-SE", { timeZone: "Asia/Tokyo" });
+
+    // attendanceRecords は queryAttendanceRecordsForDay で既に当日分のみに
+    // 絞り込まれているため、あとはクラス名簿とスケジュール指定分の絞り込みだけ行う。
+    let records = attendanceRecords.filter((r) => rosterIds.has(String(r.data.userId ?? "")));
+
+    if (scheduleId) {
+      const dailySession = dailySessions.find(
+        (ds) =>
+          ds.data.scheduleId === scheduleId &&
+          toJstDateString(ds.data.date ?? ds.data.timestamp) === today
+      );
+
+      if (dailySession) {
+        const sessionIds = new Set(
+          sessions
+            .filter((s) => s.data.dailySessionsId === dailySession.id || s.data.daily_sessionsId === dailySession.id)
+            .map((s) => s.id)
+        );
+        records = records.filter((r) => sessionIds.has(String(r.data.sessionId ?? "")));
+      } else {
+        records = [];
+      }
+    }
 
     let present = 0;
     let late = 0;
