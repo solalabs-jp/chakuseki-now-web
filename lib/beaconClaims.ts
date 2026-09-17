@@ -3,6 +3,7 @@ import {
   deleteDocument,
   getDocument,
   queryCollection,
+  updateDocumentIfUnchanged,
   upsertDocument,
 } from "./firestoreRest";
 
@@ -35,7 +36,14 @@ const COLLECTION = "beaconClaims";
 // すると teacherId="" のまま孤児になり得るため、これより古い空予約は
 // 孤児とみなして上書きを許可する(そうしないと以後そのビーコンIDへの
 // 予約が自己修復パスも無いまま永久にブロックされる)。
-const STALE_PENDING_MS = 60_000;
+//
+// この値は functions/src/handlers/auth.ts の registerUser に設定した
+// timeoutSeconds(120秒)より確実に大きくすること。そうでないと、
+// コールドスタート等でregisterUserの処理がこの秒数より長くかかった場合、
+// まだ進行中の正当なプレースホルダーを「孤児」と誤認して別リクエストに
+// 奪われ、先着リクエストはAuthアカウント作成後のクレーム確定に失敗して
+// 孤立したAuthアカウントを残してしまう。
+const STALE_PENDING_MS = 180_000;
 
 export async function reserveBeaconId(
   normalizedBeaconId: string,
@@ -67,11 +75,35 @@ export async function reserveBeaconId(
         return { ok: false };
       }
 
-      // 孤児化した空予約を上書きして自分のものにする。
-      await upsertDocument(COLLECTION, normalizedBeaconId, {
-        teacherId,
-        createdAt: new Date(),
-      });
+      // 孤児化した空予約を上書きして自分のものにする。読み取り(getDocument)
+      // から書き込みまでの間に別リクエストも同じ「孤児だ」という判定を
+      // していると、両方が無条件に upsert してしまい後勝ちで静かに
+      // どちらかの予約が消える。updateTime を precondition にした CAS
+      // 書き込みにすることで、先に書き込んだ方だけが成功するようにする。
+      if (existing?.updateTime) {
+        const swapped = await updateDocumentIfUnchanged(
+          COLLECTION,
+          normalizedBeaconId,
+          { teacherId, createdAt: new Date() },
+          existing.updateTime
+        );
+        if (!swapped) {
+          // 他のリクエストが先に奪取した。
+          return { ok: false };
+        }
+      } else {
+        // 読み取り後にドキュメントが削除されていた等、precondition に
+        // 使える updateTime が無いケース。create() をやり直し、既に
+        // 誰かが再作成していれば 409 で失敗して false を返す
+        // (空振りの無条件上書きを避ける)。
+        const recreated = await createDocument(COLLECTION, normalizedBeaconId, {
+          teacherId,
+          createdAt: new Date(),
+        });
+        if (!recreated.created) {
+          return { ok: false };
+        }
+      }
     } else {
       return { ok: false };
     }
