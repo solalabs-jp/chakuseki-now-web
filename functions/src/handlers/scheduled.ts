@@ -4,8 +4,82 @@ import * as logger from "firebase-functions/logger";
 import {FieldValue, Timestamp} from "firebase-admin/firestore";
 import {db} from "../lib/firebase";
 import {sendStatus, setCorsHeaders, isNonEmptyString} from "../lib/http";
+import {jstNow, jstTodayDateString} from "../jstDate";
 
 // ─── Scheduled: Generate Daily Sessions ─────────────────────────────────────
+
+type GenerationResult = {
+  scheduleCount: number;
+  created: number;
+  skipped: number;
+};
+
+/**
+ * 指定した曜日・日付の dailySessions を生成する。generateDailySessions
+ * (定期実行)とadminGenerateDailySessions(手動トリガー)が同じ生成ロジック
+ * を個別実装していたため、ここに一本化する。
+ *
+ * 対象日の dailySessions はまとめて1回のクエリで取得し、既に存在する
+ * scheduleId の集合を作ってから schedules をループする。schedule 1件
+ * ごとに個別の存在確認クエリを投げる(N件のschedulesに対して2N回の
+ * 逐次Firestoreラウンドトリップになる)代わりに、クエリ1回 + メモリ上の
+ * 判定で済ませる。
+ * @param {number} dayOfWeek 対象の曜日(1=月〜5=金、schedules.dayOfWeekと一致)。
+ * @param {Timestamp} dateTimestamp 対象日の00:00:00を表すTimestamp。
+ * @return {Promise<GenerationResult>} 対象schedule件数・作成・スキップ件数。
+ */
+async function generateSessionsForDay(
+  dayOfWeek: number,
+  dateTimestamp: Timestamp
+): Promise<GenerationResult> {
+  const schedulesSnapshot = await db
+    .collection("schedules")
+    .where("dayOfWeek", "==", dayOfWeek)
+    .get();
+
+  if (schedulesSnapshot.empty) {
+    return {scheduleCount: 0, created: 0, skipped: 0};
+  }
+
+  const existingSnapshot = await db
+    .collection("dailySessions")
+    .where("date", "==", dateTimestamp)
+    .get();
+  const existingScheduleIds = new Set(
+    existingSnapshot.docs.map((doc) => doc.data().scheduleId)
+  );
+
+  let createdCount = 0;
+  let skippedCount = 0;
+
+  for (const scheduleDoc of schedulesSnapshot.docs) {
+    const scheduleId = scheduleDoc.id;
+    const scheduleData = scheduleDoc.data();
+
+    if (existingScheduleIds.has(scheduleId)) {
+      skippedCount++;
+      continue;
+    }
+
+    const sessionData = {
+      scheduleId,
+      classId: scheduleData.classId,
+      // デフォルトの教師をコピー(旧フィールドへのフォールバック)
+      teacherId: scheduleData.defaultTeacherId ?? scheduleData.teacherId,
+      date: dateTimestamp,
+      createdAt: FieldValue.serverTimestamp(),
+    };
+
+    await db.collection("dailySessions").add(sessionData);
+    createdCount++;
+  }
+
+  return {
+    scheduleCount: schedulesSnapshot.size,
+    created: createdCount,
+    skipped: skippedCount,
+  };
+}
 
 /**
  * 平日の毎朝 6:00 (JST) に自動実行。
@@ -22,11 +96,8 @@ export const generateDailySessions = onSchedule(
   },
   async () => {
     // 今日の曜日を取得 (1=月 〜 5=金)
-    const now = new Date();
-    // 常に JST で曜日を判定する (now + 9 hours)
-    const jstTime = now.getTime() + 9 * 60 * 60 * 1000;
-    const jstNow = new Date(jstTime);
-    const jsDay = jstNow.getUTCDay(); // 0=日, 1=月, ..., 6=土
+    const jstDate = jstNow();
+    const jsDay = jstDate.getDay(); // 0=日, 1=月, ..., 6=土
 
     if (jsDay === 0 || jsDay === 6) {
       logger.info("Today is weekend, skipping daily session generation.");
@@ -36,10 +107,7 @@ export const generateDailySessions = onSchedule(
     const dayOfWeek = jsDay; // 1=月 〜 5=金 (schedules.dayOfWeek と一致)
 
     // 今日の日付文字列 (YYYY-MM-DD) を JST で算出
-    const year = jstNow.getUTCFullYear();
-    const month = String(jstNow.getUTCMonth() + 1).padStart(2, "0");
-    const day = String(jstNow.getUTCDate()).padStart(2, "0");
-    const todayStr = `${year}-${month}-${day}`;
+    const todayStr = jstTodayDateString();
 
     // 今日の 00:00:00 JST を Timestamp に変換
     const todayTimestamp = Timestamp.fromDate(
@@ -53,55 +121,17 @@ export const generateDailySessions = onSchedule(
     });
 
     try {
-      // 1. 当日の曜日に一致する schedules を取得
-      const schedulesSnapshot = await db
-        .collection("schedules")
-        .where("dayOfWeek", "==", dayOfWeek)
-        .get();
+      const result = await generateSessionsForDay(dayOfWeek, todayTimestamp);
 
-      if (schedulesSnapshot.empty) {
+      if (result.scheduleCount === 0) {
         logger.info("No schedules found for today.", {dayOfWeek});
         return;
       }
 
-      let createdCount = 0;
-      let skippedCount = 0;
-
-      for (const scheduleDoc of schedulesSnapshot.docs) {
-        const scheduleId = scheduleDoc.id;
-        const scheduleData = scheduleDoc.data();
-
-        // 2. 同日・同スケジュールの dailySession が既に存在するかチェック
-        const existingSnapshot = await db
-          .collection("dailySessions")
-          .where("scheduleId", "==", scheduleId)
-          .where("date", "==", todayTimestamp)
-          .limit(1)
-          .get();
-
-        if (!existingSnapshot.empty) {
-          skippedCount++;
-          continue;
-        }
-
-        // 3. dailySession を生成
-        const sessionData = {
-          scheduleId,
-          classId: scheduleData.classId,
-          // デフォルトの教師をコピー(旧フィールドへのフォールバック)
-          teacherId: scheduleData.defaultTeacherId ?? scheduleData.teacherId,
-          date: todayTimestamp,
-          createdAt: FieldValue.serverTimestamp(),
-        };
-
-        await db.collection("dailySessions").add(sessionData);
-        createdCount++;
-      }
-
       logger.info("Daily sessions generation completed", {
         date: todayStr,
-        created: createdCount,
-        skipped: skippedCount,
+        created: result.created,
+        skipped: result.skipped,
         structuredData: true,
       });
     } catch (err) {
@@ -160,19 +190,11 @@ export const adminGenerateDailySessions = onRequest(async (
     }
     targetDate = new Date(`${body.date}T00:00:00+09:00`);
   } else {
-    const now = new Date();
-    const jstNowTime = now.getTime() + 9 * 60 * 60 * 1000;
-    const jstNow = new Date(jstNowTime);
-    const yyyy = jstNow.getUTCFullYear();
-    const mm = String(jstNow.getUTCMonth() + 1).padStart(2, "0");
-    const dd = String(jstNow.getUTCDate()).padStart(2, "0");
-    targetDate = new Date(`${yyyy}-${mm}-${dd}T00:00:00+09:00`);
+    targetDate = new Date(`${jstTodayDateString()}T00:00:00+09:00`);
   }
 
-  // 常に JST で曜日を判定する (targetDate + 9 hours)
-  const jstTime = targetDate.getTime() + 9 * 60 * 60 * 1000;
-  const jstDateForDay = new Date(jstTime);
-  const jsDay = jstDateForDay.getUTCDay();
+  // 常に JST で曜日を判定する
+  const jsDay = jstNow(targetDate).getDay();
 
   if (jsDay === 0 || jsDay === 6) {
     response.status(400).json({error: "Specified date is a weekend."});
@@ -181,20 +203,14 @@ export const adminGenerateDailySessions = onRequest(async (
 
   const dayOfWeek = jsDay; // 1=月 〜 5=金
   const todayTimestamp = Timestamp.fromDate(targetDate);
-  const dsYyyy = jstDateForDay.getUTCFullYear();
-  const dsMm = String(jstDateForDay.getUTCMonth() + 1).padStart(2, "0");
-  const dsDd = String(jstDateForDay.getUTCDate()).padStart(2, "0");
-  const dateStr = `${dsYyyy}-${dsMm}-${dsDd}`;
+  const dateStr = jstTodayDateString(targetDate);
 
   logger.info("adminGenerateDailySessions info", {dateStr, dayOfWeek, jsDay});
 
   try {
-    const schedulesSnapshot = await db
-      .collection("schedules")
-      .where("dayOfWeek", "==", dayOfWeek)
-      .get();
+    const result = await generateSessionsForDay(dayOfWeek, todayTimestamp);
 
-    if (schedulesSnapshot.empty) {
+    if (result.scheduleCount === 0) {
       response.status(200).json({
         message: "No schedules for this day.",
         created: 0,
@@ -203,43 +219,12 @@ export const adminGenerateDailySessions = onRequest(async (
       return;
     }
 
-    let createdCount = 0;
-    let skippedCount = 0;
-
-    for (const scheduleDoc of schedulesSnapshot.docs) {
-      const scheduleId = scheduleDoc.id;
-      const scheduleData = scheduleDoc.data();
-
-      const existingSnapshot = await db
-        .collection("dailySessions")
-        .where("scheduleId", "==", scheduleId)
-        .where("date", "==", todayTimestamp)
-        .limit(1)
-        .get();
-
-      if (!existingSnapshot.empty) {
-        skippedCount++;
-        continue;
-      }
-
-      const sessionData = {
-        scheduleId,
-        classId: scheduleData.classId,
-        teacherId: scheduleData.defaultTeacherId ?? scheduleData.teacherId,
-        date: todayTimestamp,
-        createdAt: FieldValue.serverTimestamp(),
-      };
-
-      await db.collection("dailySessions").add(sessionData);
-      createdCount++;
-    }
-
     response.status(200).json({
       message: "Daily sessions generated.",
       date: dateStr,
       dayOfWeek,
-      created: createdCount,
-      skipped: skippedCount,
+      created: result.created,
+      skipped: result.skipped,
     });
   } catch (err) {
     logger.error("Error generating daily sessions", {error: err});
