@@ -37,3 +37,15 @@ export function CheckIcon() {
     </svg>
   );
 }
+
+export function PlusIcon({
+  size = 14,
+  color = 'currentColor',
+  strokeWidth = 2,
+}: { size?: number; color?: string; strokeWidth?: number } = {}) {
+  return (
+    <svg width={size} height={size} fill="none" stroke={color} strokeWidth={strokeWidth} viewBox="0 0 24 24" strokeLinecap="round">
+      <path d="M12 5v14M5 12h14" />
+    </svg>
+  );
+}

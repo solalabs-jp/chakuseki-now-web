@@ -56,7 +56,7 @@ export default function TimetableGrid({ periods, timetable, onAddCell, onDeleteC
                   className={styles.emptyCell2}
                   onClick={() => onAddCell(colIdx, periods[rowIdx]?.id)}
                 >
-                  <PlusIcon />
+                  <PlusIcon size={20} color="#d1d5db" strokeWidth={1.5} />
                 </button>
               )}
             </div>
