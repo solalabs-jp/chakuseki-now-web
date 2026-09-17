@@ -1,7 +1,8 @@
 import type { NextApiRequest, NextApiResponse } from "next";
-import { listCollection, queryCollectionWhere } from "../../../lib/firestoreRest";
+import { listCollection } from "../../../lib/firestoreRest";
 import { requireTeacher } from "../../../lib/auth";
 import { jstDayBoundsUtc } from "../../../lib/jstDate";
+import { queryAttendanceRecordsForDay } from "../../../lib/attendanceRecords";
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   const uid = await requireTeacher(req, res);
@@ -15,12 +16,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const [users, attendanceRecords] = await Promise.all([
       listCollection("users"),
       // pages/api/attendance/realtime.ts と同じ理由で、全期間を読んでメモリ上
-      // で当日分に絞り込む代わりに confirmedAt(Firestore Timestamp)の範囲
-      // クエリで当日分だけを取得する。
-      queryCollectionWhere("attendanceRecords", [
-        { field: "confirmedAt", op: "GREATER_THAN_OR_EQUAL", value: start },
-        { field: "confirmedAt", op: "LESS_THAN", value: end },
-      ]),
+      // で当日分に絞り込む代わりに confirmedAt の範囲クエリで当日分だけを
+      // 取得する。
+      queryAttendanceRecordsForDay(start, end),
     ]);
 
     const rosterIds = new Set(
