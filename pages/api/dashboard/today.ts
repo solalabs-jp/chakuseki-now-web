@@ -1,5 +1,6 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { listCollection } from "../../../lib/firestoreRest";
+import { ATTENDED_STATUSES } from "../../../lib/statusUtils";
 import { requireTeacher } from "../../../lib/auth";
 import { hhmmToLabel } from "../../../lib/periodTime";
 import { jstNow, jstTodayDateString, toJstDateString } from "../../../lib/jstDate";
@@ -20,8 +21,6 @@ function formatHhmm(value: unknown): string {
   if (typeof value !== "number") return "";
   return hhmmToLabel(value);
 }
-
-const ATTENDED_STATUSES = new Set(["present", "late", "early_leave", "mid_absence"]);
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   const uid = await requireTeacher(req, res);
@@ -53,8 +52,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const rosterCountByClassId = new Map<string, number>();
     for (const u of users) {
       if (u.data.role !== "student") continue;
-      const classId = String(u.data.classId ?? "");
-      rosterCountByClassId.set(classId, (rosterCountByClassId.get(classId) ?? 0) + 1);
+      const userClassId = String(u.data.classId ?? "");
+      rosterCountByClassId.set(userClassId, (rosterCountByClassId.get(userClassId) ?? 0) + 1);
     }
 
     const todaysSchedules = schedules.filter((s) => {

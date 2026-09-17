@@ -2,14 +2,7 @@ import type { NextApiRequest, NextApiResponse } from "next";
 import { listCollection } from "../../../lib/firestoreRest";
 import { requireTeacher } from "../../../lib/auth";
 
-const STATUS_LABELS: Record<string, string> = {
-  present: "出席",
-  late: "遅刻",
-  absent: "欠席",
-  excused: "公欠",
-  early_leave: "早退",
-  mid_absence: "中抜け",
-};
+import { STATUS_LABELS } from "../../../lib/statusUtils";
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   const uid = await requireTeacher(req, res);
