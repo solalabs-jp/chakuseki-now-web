@@ -269,7 +269,15 @@ function callIdentityToolkit(payload: {
  * Firebase Admin SDK を用いてユーザーを作成し、
  * Firestore の users コレクションにロール情報を保存する。
  */
-export const registerUser = onRequest(async (request, response) => {
+// pages/api/teachers 側の lib/beaconClaims.ts の STALE_PENDING_MS(空
+// プレースホルダ予約を孤児とみなすまでの猶予)は、この関数がここで確実に
+// 終了している(タイムアウトで強制終了済み)と言える時間より長くなければ
+// ならない。ここで明示的に timeoutSeconds を固定し、あちらのコメントから
+// この値を参照できるようにする(デフォルト60秒は起動が遅いケースで
+// ギリギリすぎるため、双方に余裕を持たせて調整済み)。
+export const registerUser = onRequest({timeoutSeconds: 120}, async (
+  request, response
+) => {
   setCorsHeaders(response);
 
   if (request.method === "OPTIONS") {
@@ -615,7 +623,13 @@ export const updateUser = onRequest(async (request, response) => {
     if (body.name !== undefined) update.name = body.name;
     if (body.classId !== undefined) update.classId = body.classId;
     if (body.beaconId !== undefined) {
-      update.beaconId = body.beaconId;
+      // クリア(newNormalizedBeaconIdがnull)の場合は beaconId も
+      // normalizedBeaconId と同じく FieldValue.delete() で消す。片方だけ
+      // 空文字で残すと、フィールド有無で「設定済みか」を判定するコードが
+      // 誤って設定済みと見なしてしまう。
+      update.beaconId = newNormalizedBeaconId ?
+        body.beaconId :
+        FieldValue.delete();
       update.normalizedBeaconId = newNormalizedBeaconId ?? FieldValue.delete();
     }
 
