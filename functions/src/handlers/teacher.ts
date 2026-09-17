@@ -568,7 +568,10 @@ export const teacherRegisterBeacon = onRequest(async (request, response) => {
       () =>
         targetDocRef.update({
           session: session,
-          beaconId: beaconId,
+          // beaconId には生の入力値ではなく正規化済みの値を保存する
+          // (studentBeacon/iOS 側は beaconId をそのまま UUID として突き
+          // 合わせるため、表記ゆれのある生値だと一致しなくなる)。
+          beaconId: normalizedBeaconId,
           normalizedBeaconId,
           updatedAt: FieldValue.serverTimestamp(),
         })
