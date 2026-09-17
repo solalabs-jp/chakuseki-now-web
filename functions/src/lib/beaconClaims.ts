@@ -76,28 +76,52 @@ export async function claimBeaconId(
 
     // 既に予約が存在する。所有者が自分自身なら重複ではない。
     const existingClaim = await claimRef.get();
-    const existingData = existingClaim.data();
-    const owner = existingClaim.exists ? existingData?.teacherId : undefined;
-    if (owner !== teacherId) {
-      // pages/api/teachers の新規登録は uid 採番前に teacherId="" の
-      // プレースホルダで beaconClaims を予約してから registerUser を呼ぶ。
-      // このときの owner="" は他の教員との競合ではなく自分自身の予約な
-      // ので、adoptPlaceholder=true(registerUser からの呼び出し)の場合
-      // に限り実際の teacherId で確定させる。他の呼び出し元
-      // (updateUser/teacherRegisterBeacon)は既存の実 uid に対して更新
-      // するだけで、この二段階予約パターンを使わないため対象外。
-      if (options.adoptPlaceholder && owner === "") {
-        await claimRef.set(
-          {teacherId, createdAt: FieldValue.serverTimestamp()},
-          {merge: true}
-        );
-      } else {
+
+    if (!existingClaim.exists) {
+      // create() が ALREADY_EXISTS で失敗した直後、この get() までの間に
+      // releaseBeaconClaim 等で当該ドキュメントが削除された場合、ここで
+      // ビーコンIDは実際には空いている。owner=undefined を「他人の
+      // クレーム」と誤判定して409を返すと正当な登録が失敗するため、
+      // create() をやり直す。
+      try {
+        await claimRef.create({
+          teacherId,
+          createdAt: FieldValue.serverTimestamp(),
+          legacyChecked: false,
+        });
+        // 新規作成できた。needsLegacyCheck は初期値 true のまま
+        // 下のレガシーチェックへ進む。
+      } catch (retryErr) {
+        if ((retryErr as { code?: number })?.code !== 6) {
+          throw retryErr;
+        }
+        // 再作成の間に別リクエストが先に予約した。今度こそ本当に競合。
         return false;
       }
     } else {
-      // 既に自分自身の確定済みクレームだった場合、過去にレガシーチェック
-      // 済みならクエリを省略する(users への読み取りが倍増するのを防ぐ)。
-      needsLegacyCheck = existingData?.legacyChecked !== true;
+      const existingData = existingClaim.data();
+      const owner = existingData?.teacherId;
+      if (owner !== teacherId) {
+        // pages/api/teachers の新規登録は uid 採番前に teacherId="" の
+        // プレースホルダで beaconClaims を予約してから registerUser を呼ぶ。
+        // このときの owner="" は他の教員との競合ではなく自分自身の予約な
+        // ので、adoptPlaceholder=true(registerUser からの呼び出し)の場合
+        // に限り実際の teacherId で確定させる。他の呼び出し元
+        // (updateUser/teacherRegisterBeacon)は既存の実 uid に対して更新
+        // するだけで、この二段階予約パターンを使わないため対象外。
+        if (options.adoptPlaceholder && owner === "") {
+          await claimRef.set(
+            {teacherId, createdAt: FieldValue.serverTimestamp()},
+            {merge: true}
+          );
+        } else {
+          return false;
+        }
+      } else {
+        // 既に自分自身の確定済みクレームだった場合、過去にレガシーチェック
+        // 済みならクエリを省略する(users への読み取りが倍増するのを防ぐ)。
+        needsLegacyCheck = existingData?.legacyChecked !== true;
+      }
     }
   }
 
