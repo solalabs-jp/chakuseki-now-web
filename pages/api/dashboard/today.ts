@@ -1,32 +1,13 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { listCollection } from "../../../lib/firestoreRest";
-import { jstDateString, dailySessionDateString } from "../../../lib/dateUtils";
 import { ATTENDED_STATUSES } from "../../../lib/statusUtils";
 import { requireTeacher } from "../../../lib/auth";
+import { hhmmToLabel } from "../../../lib/periodTime";
+import { jstNow, jstTodayDateString, toJstDateString } from "../../../lib/jstDate";
 
-function getJstNowParts() {
-  const now = new Date();
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone: "Asia/Tokyo",
-    hour12: false,
-    hour: "numeric",
-    minute: "numeric",
-    weekday: "short",
-  }).formatToParts(now);
-
-  const hourStr = parts.find((p) => p.type === "hour")?.value || "0";
-  const minuteStr = parts.find((p) => p.type === "minute")?.value || "0";
-  const weekdayStr = parts.find((p) => p.type === "weekday")?.value || "Sun";
-
-  const hour = parseInt(hourStr, 10) % 24;
-  const minute = parseInt(minuteStr, 10);
-  
-  // Firestore convention: 1=Mon, 2=Tue, ..., 7=Sun
-  const days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
-  let dayOfWeek = days.indexOf(weekdayStr) + 1;
-  if (dayOfWeek === 0) dayOfWeek = 7; // Fallback to Sun if not found
-
-  return { hour, minute, dayOfWeek };
+// Firestore's dayOfWeek convention: 1=月...7=日. JS Date#getDay(): 0=日...6=土.
+function toScheduleDayOfWeek(jsDay: number): number {
+  return jsDay === 0 ? 7 : jsDay;
 }
 
 function hhmmToMinutes(value: unknown): number | null {
@@ -38,10 +19,8 @@ function hhmmToMinutes(value: unknown): number | null {
 
 function formatHhmm(value: unknown): string {
   if (typeof value !== "number") return "";
-  const padded = String(value).padStart(4, "0");
-  return `${padded.slice(0, 2)}:${padded.slice(2)}`;
+  return hhmmToLabel(value);
 }
-
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   const uid = await requireTeacher(req, res);
@@ -62,10 +41,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         listCollection("attendanceRecords"),
       ]);
 
-    const jstParts = getJstNowParts();
-    const nowMinutes = jstParts.hour * 60 + jstParts.minute;
-    const todayScheduleDay = jstParts.dayOfWeek;
-    const today = jstDateString();
+    const now = jstNow();
+    const nowMinutes = now.getHours() * 60 + now.getMinutes();
+    const todayScheduleDay = toScheduleDayOfWeek(now.getDay());
+    const today = jstTodayDateString();
 
     const periodsById = new Map(periods.map((p) => [p.id, p.data]));
     const classesById = new Map(classes.map((c) => [c.id, c.data]));
@@ -95,7 +74,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         const dailySession = dailySessions.find(
           (ds) =>
             ds.data.scheduleId === schedule.id &&
-            dailySessionDateString(ds.data.date ?? ds.data.timestamp) === today
+            toJstDateString(ds.data.date ?? ds.data.timestamp) === today
         );
 
         let attended = 0;
