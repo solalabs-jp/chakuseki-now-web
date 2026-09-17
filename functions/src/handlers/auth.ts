@@ -354,7 +354,10 @@ export const registerUser = onRequest({timeoutSeconds: 120}, async (
       normalizeBeaconId(body.beaconId) :
       null;
     if (normalizedBeaconId) {
-      userData.beaconId = body.beaconId;
+      // beaconId には生の body.beaconId ではなく正規化済みの値を保存する
+      // (studentBeacon/iOS 側は beaconId をそのまま UUID として突き合わせる
+      // ため、表記ゆれのある生値だと一致しなくなる)。
+      userData.beaconId = normalizedBeaconId;
       // studentBeacon が全教員を読んでメモリ上で正規化・比較する代わりに
       // 等価クエリで絞り込めるよう、正規化済みの値も保存しておく。
       userData.normalizedBeaconId = normalizedBeaconId;
@@ -627,9 +630,11 @@ export const updateUser = onRequest(async (request, response) => {
       // normalizedBeaconId と同じく FieldValue.delete() で消す。片方だけ
       // 空文字で残すと、フィールド有無で「設定済みか」を判定するコードが
       // 誤って設定済みと見なしてしまう。
-      update.beaconId = newNormalizedBeaconId ?
-        body.beaconId :
-        FieldValue.delete();
+      // beaconId には生の body.beaconId ではなく正規化済みの値を保存する。
+      // studentBeacon/iOS 側は beaconId をそのまま UUID として突き合わせる
+      // ため、表記ゆれ(ダッシュ無し・小文字等)のある生値を保存すると
+      // 検知側の正規化済み文字列と一致しなくなる。
+      update.beaconId = newNormalizedBeaconId ?? FieldValue.delete();
       update.normalizedBeaconId = newNormalizedBeaconId ?? FieldValue.delete();
     }
 
