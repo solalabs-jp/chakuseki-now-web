@@ -524,29 +524,7 @@ export const teacherRegisterBeacon = onRequest(async (request, response) => {
       // ID Token ではない、あるいは検証失敗時は次のステップへ
     }
 
-    // 2. ドキュメント ID が直接 session と一致するか検証
-    if (!targetDocRef) {
-      const directDoc = await db.collection("users").doc(session).get();
-      if (directDoc.exists) {
-        targetDocRef = directDoc.ref;
-        targetDocData = directDoc.data() || {};
-      }
-    }
-
-    // 3. session フィールドの値が一致するドキュメントを検索
-    if (!targetDocRef) {
-      const querySnapshot = await db
-        .collection("users")
-        .where("session", "==", session)
-        .limit(1)
-        .get();
-      if (!querySnapshot.empty) {
-        targetDocRef = querySnapshot.docs[0].ref;
-        targetDocData = querySnapshot.docs[0].data();
-      }
-    }
-
-    // 4. ダミーセッションかつ "teacher-001" が存在するか検証
+    // 2. ダミーセッションかつ "teacher-001" が存在するか検証
     if (!targetDocRef && session === DUMMY_TEACHER_SESSION) {
       const dummyDoc = await db.collection("users").doc("teacher-001").get();
       if (dummyDoc.exists) {

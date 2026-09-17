@@ -19,7 +19,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return;
   }
 
-  if (process.env.NODE_ENV === "production") {
+  // 本番判定はブロックリスト(production を弾く)ではなくアローリストにする。
+  // NODE_ENV が未設定・想定外の値になる本番相当環境でも、
+  // 明示的に "development" でない限りこのエンドポイントを無効化する。
+  if (process.env.NODE_ENV !== "development") {
     res.status(403).json({ error: "本番環境では利用できません。" });
     return;
   }
