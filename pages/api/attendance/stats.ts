@@ -1,13 +1,8 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { listCollection } from "../../../lib/firestoreRest";
 import { requireTeacher } from "../../../lib/auth";
-
-function toJstDateString(value: unknown): string | null {
-  if (typeof value !== "string") return null;
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return null;
-  return date.toLocaleDateString("sv-SE", { timeZone: "Asia/Tokyo" });
-}
+import { jstDayBoundsUtc, toJstDateString } from "../../../lib/jstDate";
+import { queryAttendanceRecordsForDay } from "../../../lib/attendanceRecords";
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   const uid = await requireTeacher(req, res);
@@ -17,9 +12,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   const scheduleId = req.query.scheduleId ? String(req.query.scheduleId) : null;
 
   try {
+    const { start, end } = jstDayBoundsUtc(new Date());
+
     const [users, attendanceRecords, dailySessions, sessions] = await Promise.all([
       listCollection("users"),
-      listCollection("attendanceRecords"),
+      // pages/api/attendance/realtime.ts と同じ理由で、全期間を読んでメモリ上
+      // で当日分に絞り込む代わりに confirmedAt の範囲クエリで当日分だけを
+      // 取得する。
+      queryAttendanceRecordsForDay(start, end),
       scheduleId ? listCollection("dailySessions") : Promise.resolve([]),
       scheduleId ? listCollection("sessions") : Promise.resolve([]),
     ]);
@@ -32,6 +32,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     const today = new Date().toLocaleDateString("sv-SE", { timeZone: "Asia/Tokyo" });
 
+    // attendanceRecords は queryAttendanceRecordsForDay で既に当日分のみに
+    // 絞り込まれているため、あとはクラス名簿とスケジュール指定分の絞り込みだけ行う。
     let records = attendanceRecords.filter((r) => rosterIds.has(String(r.data.userId ?? "")));
 
     if (scheduleId) {
@@ -51,8 +53,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       } else {
         records = [];
       }
-    } else {
-      records = records.filter((r) => toJstDateString(r.data.confirmedAt) === today);
     }
 
     let present = 0;

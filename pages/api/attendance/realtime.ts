@@ -1,21 +1,10 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { listCollection } from "../../../lib/firestoreRest";
 import { requireTeacher } from "../../../lib/auth";
+import { formatJstTime, jstDayBoundsUtc, toJstDateString } from "../../../lib/jstDate";
+import { queryAttendanceRecordsForDay } from "../../../lib/attendanceRecords";
 
 import { STATUS_LABELS } from "../../../lib/statusUtils";
-
-function formatTime(iso: unknown): string {
-  if (typeof iso !== "string") return "--:--:--";
-  const match = iso.match(/T(\d{2}):(\d{2}):(\d{2})/);
-  return match ? `${match[1]}:${match[2]}:${match[3]}` : "--:--:--";
-}
-
-function toJstDateString(value: unknown): string | null {
-  if (typeof value !== "string") return null;
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return null;
-  return date.toLocaleDateString("sv-SE", { timeZone: "Asia/Tokyo" });
-}
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   const uid = await requireTeacher(req, res);
@@ -25,9 +14,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   const scheduleId = req.query.scheduleId ? String(req.query.scheduleId) : null;
 
   try {
+    const { start, end } = jstDayBoundsUtc(new Date());
+
     const [users, attendanceRecords, checkinAnswers, dailySessions, sessions] = await Promise.all([
       listCollection("users"),
-      listCollection("attendanceRecords"),
+      // 全期間を読んでメモリ上で当日分に絞り込む代わりに、Firestore 側の
+      // 範囲クエリ(confirmedAt >= 今日0時 かつ < 翌日0時)で当日分だけを
+      // 取得する。過去分が積み上がるほど listCollection の全件読み取りは
+      // 重くなるため、ポーリング頻度を上げてもコストが増えないようにする。
+      queryAttendanceRecordsForDay(start, end),
       listCollection("checkinAnswers"),
       scheduleId ? listCollection("dailySessions") : Promise.resolve([]),
       scheduleId ? listCollection("sessions") : Promise.resolve([]),
@@ -45,6 +40,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     const today = new Date().toLocaleDateString("sv-SE", { timeZone: "Asia/Tokyo" });
 
+    // attendanceRecords は queryAttendanceRecordsForDay で既に当日分のみに
+    // 絞り込まれているため、あとはクラス名簿とスケジュール指定分の絞り込みだけ行う。
     let filteredRecords = attendanceRecords.filter((r) => rosterById.has(String(r.data.userId ?? "")));
 
     if (scheduleId) {
@@ -64,8 +61,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       } else {
         filteredRecords = [];
       }
-    } else {
-      filteredRecords = filteredRecords.filter((r) => toJstDateString(r.data.confirmedAt) === today);
     }
 
     const list = filteredRecords
@@ -82,7 +77,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           id: String(record.data.userId ?? ""),
           name: student?.name ?? record.data.userId,
           status: STATUS_LABELS[String(record.data.status)] ?? String(record.data.status),
-          time: formatTime(record.data.confirmedAt),
+          time: formatJstTime(record.data.confirmedAt),
           comment,
         };
       });

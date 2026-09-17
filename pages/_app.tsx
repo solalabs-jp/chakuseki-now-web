@@ -1,6 +1,7 @@
 import type { AppProps } from 'next/app';
 import type { NextPage } from 'next';
 import type { ReactElement, ReactNode } from 'react';
+import Head from 'next/head';
 import Layout from '../components/Layout';
 import '../styles/globals.css';
 
@@ -14,5 +15,13 @@ type AppPropsWithLayout = AppProps & {
 
 export default function App({ Component, pageProps }: AppPropsWithLayout) {
   const getLayout = Component.getLayout ?? ((page: ReactElement) => <Layout>{page}</Layout>);
-  return <>{getLayout(<Component {...pageProps} />)}</>;
+  return (
+    <>
+      <Head>
+        <link rel="icon" href="/AppIcon.png" type="image/png" />
+        <link rel="apple-touch-icon" href="/AppIcon.png" />
+      </Head>
+      {getLayout(<Component {...pageProps} />)}
+    </>
+  );
 }

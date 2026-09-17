@@ -9,3 +9,10 @@ export function isLoggedIn(): boolean {
   if (typeof window === "undefined") return false;
   return Boolean(window.localStorage.getItem("authToken"));
 }
+
+/** ログイン時に保存した認証情報を破棄する。 */
+export function clearAuth(): void {
+  if (typeof window === "undefined") return;
+  window.localStorage.removeItem("authToken");
+  window.localStorage.removeItem("authUser");
+}

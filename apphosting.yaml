@@ -15,3 +15,9 @@ env:
     availability:
       - BUILD
       - RUNTIME
+  # Firestore REST 認証はランタイム SA の ADC のみを使う(`firebase login`
+  # トークンには依存しない)。roles/datastore.user が SA に必要。
+  - variable: FIRESTORE_AUTH
+    value: adc
+    availability:
+      - RUNTIME
